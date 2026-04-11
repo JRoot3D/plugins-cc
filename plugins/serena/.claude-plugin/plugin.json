@@ -1,0 +1,8 @@
+{
+  "name": "serena",
+  "description": "Serena project-memory helpers: activate, onboarding, update. Requires the Serena MCP server to be installed separately.",
+  "version": "0.1.0",
+  "author": {
+    "name": "JRoot3D"
+  }
+}
