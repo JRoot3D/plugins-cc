@@ -4,18 +4,15 @@
     "name": "JRoot3D"
   },
   "description": "JRoot3D's Claude Code plugins: flow workflow + serena memory helpers",
-  "metadata": {
-    "pluginRoot": "./plugins"
-  },
   "plugins": [
     {
       "name": "flow",
-      "source": "flow",
+      "source": "./plugins/flow",
       "description": "Multi-agent feature workflow skills (interview, plan, implement, review, final-check, archive)"
     },
     {
       "name": "serena",
-      "source": "serena",
+      "source": "./plugins/serena",
       "description": "Serena MCP helper skills: activate, onboarding, update. Requires the Serena MCP server."
     }
   ]
