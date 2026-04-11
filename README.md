@@ -41,8 +41,8 @@ A Claude Code marketplace containing two plugins:
 
 /flow:archive             ← new chat, after /flow:final-check passes
       ↓ reads:   interview-brief.md + feature-plan.md + all phase/review/final-check files
-      ↓ creates: .flow-spec/<feature-slug>/summary.md
-      ↓ deletes: all other feature-scoped files in .flow-spec/
+      ↓ creates: docs/flow/<feature-slug>/summary.md   (committable, outside .flow-spec/)
+      ↓ deletes: all feature-scoped files in .flow-spec/ (keeps project.md)
 ```
 
 ## When to Clear Context
@@ -86,12 +86,24 @@ The agent reads only files — it does not remember the previous chat.
   review-N-report.md      ← output of /flow:review phase-N
   review-all-report.md    ← output of /flow:review all
   final-check-result.md   ← output of /flow:final-check
-  <feature-slug>/         ← output of /flow:archive: consolidated summary + all working files removed
-    summary.md            ← self-contained record of the completed feature
 ```
 
 **Add `.flow-spec/` to `.gitignore`** — these are working artifacts, not part of the code.
 Or commit them if you want a decision history — your call.
+
+`/flow:archive` writes the consolidated summary **outside** `.flow-spec/`, into
+the project's `docs/` tree:
+
+```
+docs/
+  flow/
+    <feature-slug>/
+      summary.md          ← output of /flow:archive: self-contained record of the completed feature
+```
+
+Unlike `.flow-spec/`, `docs/flow/` is meant to be **committed** — it becomes the
+project's permanent history of what was built and why. After `/flow:archive`
+runs, `.flow-spec/` is left with only `project.md`.
 
 ## Fixing Issues After /flow:final-check
 

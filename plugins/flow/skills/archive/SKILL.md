@@ -21,8 +21,8 @@ You are an archivist agent. Your goal is to consolidate everything a completed f
 - `.flow-spec/fix-result.md` — optional, included if present
 
 ## Output
-- `.flow-spec/<feature-slug>/summary.md` — self-contained record of the completed feature
-- A clean `.flow-spec/` directory containing only `project.md`, the new archive folder, and any pre-existing archive folders from prior features
+- `docs/flow/<feature-slug>/summary.md` — self-contained, committable record of the completed feature
+- A clean `.flow-spec/` directory containing only `project.md` (the archive lives under `docs/flow/`, outside `.flow-spec/`)
 
 ---
 
@@ -49,8 +49,8 @@ You are an archivist agent. Your goal is to consolidate everything a completed f
    - strip leading and trailing `-`
 3. If the result is empty, stop:
    > "Could not derive a valid slug from the brief title. Rename the brief heading and try again."
-4. Check whether `.flow-spec/<slug>/` already exists. If it does, stop:
-   > "Archive folder `.flow-spec/<slug>/` already exists. Pick a different name or delete the existing archive first."
+4. Check whether `docs/flow/<slug>/` already exists. If it does, stop:
+   > "Archive folder `docs/flow/<slug>/` already exists. Pick a different name or delete the existing archive first."
 
 ### Step 2 — Read All Artifacts
 Read every file listed in *Input* (skip optional ones that don't exist). Build an in-memory picture of:
@@ -63,7 +63,7 @@ Read every file listed in *Input* (skip optional ones that don't exist). Build a
 Do **not** read any source code. The summary is built from `.flow-spec/` artifacts only.
 
 ### Step 3 — Write the Summary
-Create `.flow-spec/<slug>/summary.md` using the template below. The summary must be **self-contained** — after the next step the original artifacts will be gone, so anything the user may want to know later must be preserved here.
+Create `docs/flow/<slug>/summary.md` using the template below. If `docs/` or `docs/flow/` do not yet exist in the project, create them as part of this step — a missing parent directory is expected on the first archive and is not an error. The summary must be **self-contained** — after the next step the original artifacts will be gone, so anything the user may want to know later must be preserved here.
 
 ### Step 4 — Delete Feature Artifacts
 Delete each of these files individually (never `rm -rf` on `.flow-spec/`):
@@ -77,12 +77,11 @@ Delete each of these files individually (never `rm -rf` on `.flow-spec/`):
 
 **Do not delete:**
 - `.flow-spec/project.md`
-- `.flow-spec/<slug>/` (the folder you just created)
-- any pre-existing `.flow-spec/<other-slug>/` folders from prior archives
-- any other file the user may have placed in `.flow-spec/` that is not on the list above
+- anything under `docs/` — the archive you just wrote lives at `docs/flow/<slug>/summary.md`, outside `.flow-spec/`
+- any other file the user may have placed in `.flow-spec/` that is not on the list above (including any legacy `<slug>/` archive folders from before archives moved to `docs/flow/` — leave those in place)
 
 ### Step 5 — Notify
-> "✅ Feature archived → `.flow-spec/<slug>/summary.md`. `.flow-spec/` is clean and ready for the next feature."
+> "✅ Feature archived → `docs/flow/<slug>/summary.md`. `.flow-spec/` is clean and ready for the next feature."
 
 ---
 

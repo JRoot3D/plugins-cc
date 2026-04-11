@@ -57,8 +57,8 @@ review     ──reads──▶  phase-N-result.md + changed source
 final-check──reads──▶  interview-brief.md + all phase-*-result.md
            ──writes──▶ final-check-result.md  (status: DONE)
 archive    ──reads──▶  everything above
-           ──writes──▶ <feature-slug>/summary.md
-           ──deletes─▶ all other .flow-spec files
+           ──writes──▶ docs/flow/<feature-slug>/summary.md  (outside .flow-spec/, meant to be committed)
+           ──deletes─▶ all feature-scoped files in .flow-spec/ (keeps project.md)
 ```
 
 **Invariants to preserve when editing any flow skill:**
