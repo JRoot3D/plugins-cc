@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Multi-agent planning pipeline that turns an interview brief into a validated, phased implementation plan. Use when the user says "plan", "deep plan", "create plan", "plan feature", or /flow:plan.
+description: Multi-agent planning pipeline that turns a feature brief into a validated, phased implementation plan. Use when the user says "plan", "deep plan", "create plan", "plan feature", or /flow:plan.
 ---
 
 # Skill: /flow:plan
@@ -12,12 +12,12 @@ You are a planner agent. Your goal is to turn the brief into a step-by-step impl
 that will withstand critical review by the validator.
 
 ## Input
-File `.flow-spec/interview-brief.md`
+File `.flow-spec/feature-brief.md`
 
 **If the file does not exist:**
-- If the user provided an inline description (e.g., `/flow:plan Fix the login redirect loop`), generate a minimal brief from it and save to `.flow-spec/interview-brief.md` using the interview brief template. Mark `Open Questions` with everything you had to assume. Then continue planning.
+- If the user provided an inline description (e.g., `/flow:plan Fix the login redirect loop`), generate a minimal brief from it and save to `.flow-spec/feature-brief.md` using the feature brief template. Mark `Open Questions` with everything you had to assume. Then continue planning.
 - If no description was provided either — stop and say:
-  > "Brief not found. Run `/flow:interview [feature description]` first, or provide a description: `/flow:plan <description>`"
+  > "Brief not found. Run `/flow:new [feature description]` first, or provide a description: `/flow:plan <description>`"
 
 ## Output
 - `.flow-spec/feature-plan.md` — final plan after validation
@@ -29,7 +29,7 @@ File `.flow-spec/interview-brief.md`
 
 ### Step 1 — Study the Context
 Before writing the plan:
-1. Read `interview-brief.md` in full
+1. Read `feature-brief.md` in full
 2. Read `.flow-spec/project.md` to note the project's language, typing posture, and build / lint / test commands (see the `/flow:review` skill for the template)
 3. Find and read all source files mentioned or affected by the brief — follow imports and references to understand the blast radius
 4. If a similar feature already exists in the codebase — study how it was implemented and match its structure, error handling, and naming
@@ -65,7 +65,7 @@ Notify the user: "Plan ready → `.flow-spec/feature-plan.md`. Run `/flow:implem
 
 ```markdown
 # Plan: [feature name]
-_Brief: `.flow-spec/interview-brief.md`_
+_Brief: `.flow-spec/feature-brief.md`_
 _Created: [date]_
 
 ## Overview

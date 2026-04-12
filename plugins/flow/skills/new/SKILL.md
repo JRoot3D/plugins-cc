@@ -1,9 +1,9 @@
 ---
-name: interview
-description: Analyst agent that interviews the user about a feature, clarifies edge cases, and produces a structured brief for /flow:plan. Use when the user says "interview", "start interview", "new feature brief", or /flow:interview.
+name: new
+description: Analyst agent that interviews the user about a feature, clarifies edge cases, and produces a structured brief for /flow:plan. Use when the user says "interview", "start brief", "new feature", "new feature brief", or /flow:new.
 ---
 
-# Skill: /flow:interview
+# Skill: /flow:new
 
 > **Recommended model: Opus**
 
@@ -15,14 +15,14 @@ You are an analyst agent. Your sole goal is to prepare a complete brief for the 
 Initial feature description from the user (any format, any level of detail).
 
 ## Output
-File `.flow-spec/interview-brief.md`
+File `.flow-spec/feature-brief.md`
 
 ---
 
 ## Process
 
 ### Step 1 — Bootstrap Project Metadata
-`/flow:implement` and `/flow:review` both require `.flow-spec/project.md` (see the `/flow:review` skill for its full template). If it does not already exist, create a draft now — before the feature interview begins — so downstream skills have deterministic build / lint / test commands.
+`/flow:implement` and `/flow:review` both require `.flow-spec/project.md` (see the `/flow:review` skill for its full template). If it does not already exist, create a draft now — before the feature brief begins — so downstream skills have deterministic build / lint / test commands.
 
 1. **Check** — if `.flow-spec/project.md` already exists, skip to Step 2.
 
@@ -51,10 +51,10 @@ File `.flow-spec/interview-brief.md`
 3. **Draft** — write `.flow-spec/project.md` using the template from the `/flow:review` skill, filled with what you detected. For every field you cannot confidently infer from manifests alone, write your best guess followed by ` # unverified — please confirm` on the same line.
 
 4. **Confirm with the user** — show the draft and say:
-   > "I generated a draft `.flow-spec/project.md` from the manifest files I found in this project. Please review it, correct any `# unverified` fields, and confirm before we start the feature interview."
+   > "I generated a draft `.flow-spec/project.md` from the manifest files I found in this project. Please review it, correct any `# unverified` fields, and confirm before we start the feature brief."
 
 5. **Wait** for the user's response. If they correct any fields, apply the corrections to the file. If they want to edit the file manually first, save the draft as-is and tell them:
-   > "Draft saved. Edit `.flow-spec/project.md` and re-run `/flow:interview` when you're ready."
+   > "Draft saved. Edit `.flow-spec/project.md` and re-run `/flow:new` when you're ready."
    Then stop the skill here — do not continue to Step 2.
 
 Only after the user confirms `.flow-spec/project.md`, proceed to Step 2.
@@ -82,12 +82,12 @@ Before writing the brief, say:
 Wait for confirmation or correction.
 
 ### Step 5 — Write the Brief
-Write `.flow-spec/interview-brief.md` using the template below.
-Notify the user: "Brief saved → `.flow-spec/interview-brief.md`. Run `/flow:plan`"
+Write `.flow-spec/feature-brief.md` using the template below.
+Notify the user: "Brief saved → `.flow-spec/feature-brief.md`. Run `/flow:plan`"
 
 ---
 
-## Template: interview-brief.md
+## Template: feature-brief.md
 
 ```markdown
 # Feature Brief: [feature name]
@@ -119,6 +119,6 @@ _Created: [date]_
 ---
 
 ## Rules
-- Do not start writing the brief until the full interview process is complete
-- If the user wants to skip the interview — write the brief with an explicit "Open Questions" section listing all unknowns
+- Do not start writing the brief until the full brief process is complete
+- If the user wants to skip the brief — write the brief with an explicit "Open Questions" section listing all unknowns
 - Do not add anything to the brief that was not confirmed by the user

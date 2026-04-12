@@ -86,7 +86,7 @@ Write `.flow-spec/phase-N-result.md` using the template below.
 
 Notify the user:
 - If there is a next phase: "Phase N verified → run `/flow:implement phase-[N+1]`"
-- If this is the last phase: "All phases complete → run `/flow:final-check`"
+- If this is the last phase: "All phases complete → run `/flow:check`"
 
 ---
 
@@ -117,7 +117,7 @@ If none: "None"
 
 ## Fix Mode
 
-Use fix mode to address issues found by `/flow:final-check` or `/flow:review` without re-running the full phase pipeline.
+Use fix mode to address issues found by `/flow:check` or `/flow:review` without re-running the full phase pipeline.
 
 ### Invocation
 ```
@@ -126,7 +126,7 @@ Use fix mode to address issues found by `/flow:final-check` or `/flow:review` wi
 
 ### Input
 - `.flow-spec/feature-plan.md` — for overall context
-- `.flow-spec/final-check-result.md` or `.flow-spec/review-*-report.md` — the issue report describing what needs fixing
+- `.flow-spec/check-result.md` or `.flow-spec/review-*-report.md` — the issue report describing what needs fixing
 
 ### Process
 

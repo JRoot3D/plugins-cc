@@ -8,7 +8,7 @@ A Claude Code **plugin marketplace**, not a normal code project. There is no sou
 
 The marketplace is declared in `.claude-plugin/marketplace.json` and currently ships two plugins:
 
-- **`flow`** — a six-step feature workflow (`interview` → `plan` → `implement` → `review` → `final-check` → `archive`).
+- **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `archive`).
 - **`serena`** — three helpers around the external Serena MCP server (`activate`, `onboarding`, `update`). The MCP server itself is **not** in this repo; these skills assume it is installed separately.
 
 ## Repo layout
@@ -47,15 +47,15 @@ Immediately under the frontmatter, `flow` skills carry a line like `> **Recommen
 `flow` is a pipeline whose contract is enforced **by hard-stop checks inside each skill**, not by any runtime. Skills never remember each other — they communicate only through files written to `.flow-spec/` in the *user's* project (not this repo). The dataflow:
 
 ```
-interview  ──writes──▶ .flow-spec/interview-brief.md   (+ bootstraps project.md)
-plan       ──reads──▶  interview-brief.md
+new        ──writes──▶ .flow-spec/feature-brief.md   (+ bootstraps project.md)
+plan       ──reads──▶  feature-brief.md
            ──writes──▶ feature-plan.md, validation-report.md
 implement  ──reads──▶  feature-plan.md, project.md, phase-[N-1]-result.md
            ──writes──▶ phase-N-result.md  (status: VERIFIED)
 review     ──reads──▶  phase-N-result.md + changed source
            ──writes──▶ review-N-report.md
-final-check──reads──▶  interview-brief.md + all phase-*-result.md
-           ──writes──▶ final-check-result.md  (status: DONE)
+check──reads──▶  feature-brief.md + all phase-*-result.md
+           ──writes──▶ check-result.md  (status: DONE)
 archive    ──reads──▶  everything above
            ──writes──▶ docs/flow/<feature-slug>/summary.md  (outside .flow-spec/, meant to be committed)
            ──deletes─▶ all feature-scoped files in .flow-spec/ (keeps project.md)
@@ -74,9 +74,9 @@ archive    ──reads──▶  everything above
 
 - The **template lives in `plugins/flow/skills/review/SKILL.md`**.
 - It is **consumed by** `implement/SKILL.md` and `review/SKILL.md` (both hard-stop if it's missing).
-- It is **bootstrapped by** `interview/SKILL.md`, which auto-detects language from manifest files (`package.json`, `pyproject.toml`, `Cargo.toml`, …) and drafts the file with `# unverified` markers for the user to confirm.
+- It is **bootstrapped by** `new/SKILL.md`, which auto-detects language from manifest files (`package.json`, `pyproject.toml`, `Cargo.toml`, …) and drafts the file with `# unverified` markers for the user to confirm.
 
-**If you change the template in `review/SKILL.md`, also update the detection logic and the drafted fields in `interview/SKILL.md`.** There's no compile-time check for this — only grep.
+**If you change the template in `review/SKILL.md`, also update the detection logic and the drafted fields in `new/SKILL.md`.** There's no compile-time check for this — only grep.
 
 ## Installing/testing changes locally
 

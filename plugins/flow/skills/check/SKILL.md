@@ -1,9 +1,9 @@
 ---
-name: final-check
-description: Auditor agent that verifies the full feature implementation against the original brief, not just the plan. Use when the user says "final check", "verify feature", or /flow:final-check.
+name: check
+description: Auditor agent that verifies the full feature implementation against the original brief, not just the plan. Use when the user says "check", "check feature", "final check", "verify feature", or /flow:check.
 ---
 
-# Skill: /flow:final-check
+# Skill: /flow:check
 
 > **Recommended model: Opus**
 
@@ -14,7 +14,7 @@ relative to the original brief — not relative to the plan.
 **This distinction matters:** the plan may have been incomplete. The brief is the source of truth.
 
 ## Input
-- `.flow-spec/interview-brief.md`
+- `.flow-spec/feature-brief.md`
 - `.flow-spec/feature-plan.md`
 - `.flow-spec/phase-*-result.md` — all result files
 
@@ -33,7 +33,7 @@ Do not rely on the plan — actively search:
 - All places where the new logic should exist but may be missing
 
 ### Step 2 — Verify Against the Brief
-Go through every item in `interview-brief.md`:
+Go through every item in `feature-brief.md`:
 
 - **Expected Behavior** → verify each scenario in the code
 - **Edge Cases** → verify each one explicitly
@@ -48,7 +48,7 @@ Go through every item in `interview-brief.md`:
 
 **If everything is OK:**
 Notify: "✅ Final check passed. Feature is fully implemented."
-Write `.flow-spec/final-check-result.md` with status DONE.
+Write `.flow-spec/check-result.md` with status DONE.
 
 **If there are issues:**
 Report each problem specifically:
@@ -62,7 +62,7 @@ Report each problem specifically:
 
 ---
 
-## Template: final-check-result.md
+## Template: check-result.md
 
 ```markdown
 # Final Check: [feature name]

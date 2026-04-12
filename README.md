@@ -2,7 +2,7 @@
 
 A Claude Code marketplace containing two plugins:
 
-- **`flow`** — multi-agent feature workflow. Skills: `flow:interview`, `flow:plan`, `flow:implement`, `flow:review`, `flow:final-check`, `flow:archive`.
+- **`flow`** — multi-agent feature workflow. Skills: `flow:new`, `flow:plan`, `flow:implement`, `flow:review`, `flow:check`, `flow:archive`.
 - **`serena`** — Serena MCP helpers. Skills: `serena:activate`, `serena:onboarding`, `serena:update`. (Requires the [Serena MCP server](https://github.com/oraios/serena) to be installed separately.)
 
 ## Install
@@ -16,11 +16,11 @@ A Claude Code marketplace containing two plugins:
 ## Flow
 
 ```
-/flow:interview [feature description]
-      ↓ creates: .flow-spec/interview-brief.md
+/flow:new [feature description]
+      ↓ creates: .flow-spec/feature-brief.md
 
 /flow:plan
-      ↓ reads:   interview-brief.md
+      ↓ reads:   feature-brief.md
       ↓ creates: feature-plan.md + validation-report.md
 
 /flow:implement phase-N   ← new chat, /clear before running
@@ -31,16 +31,16 @@ A Claude Code marketplace containing two plugins:
       ↓ reads:   phase-N-result.md + changed source files
       ↓ creates: review-N-report.md
 
-/flow:review all          ← optional, before /flow:final-check
+/flow:review all          ← optional, before /flow:check
       ↓ reads:   all phase-*-result.md + changed source files
       ↓ creates: review-all-report.md
 
-/flow:final-check         ← new chat
-      ↓ reads:   interview-brief.md + all phase-*-result.md
-      ↓ creates: final-check-result.md
+/flow:check         ← new chat
+      ↓ reads:   feature-brief.md + all phase-*-result.md
+      ↓ creates: check-result.md
 
-/flow:archive             ← new chat, after /flow:final-check passes
-      ↓ reads:   interview-brief.md + feature-plan.md + all phase/review/final-check files
+/flow:archive             ← new chat, after /flow:check passes
+      ↓ reads:   feature-brief.md + feature-plan.md + all phase/review/check files
       ↓ creates: docs/flow/<feature-slug>/summary.md   (committable, outside .flow-spec/)
       ↓ deletes: all feature-scoped files in .flow-spec/ (keeps project.md)
 ```
@@ -49,12 +49,12 @@ A Claude Code marketplace containing two plugins:
 
 | Transition | Action |
 |------------|--------|
-| flow:interview → flow:plan | /clear or new chat |
+| flow:new → flow:plan | /clear or new chat |
 | flow:plan → flow:implement phase-1 | **mandatory** new chat |
 | phase-N → flow:review | same chat or new chat — both work |
 | flow:review → phase-N+1 | **mandatory** new chat |
-| last phase → flow:final-check | new chat |
-| flow:final-check → flow:archive | new chat |
+| last phase → flow:check | new chat |
+| flow:check → flow:archive | new chat |
 
 **Rule:** every `/flow:implement` starts with a clean context.
 The agent reads only files — it does not remember the previous chat.
@@ -64,12 +64,12 @@ The agent reads only files — it does not remember the previous chat.
 | Situation | Skill |
 |-----------|-------|
 | Simple bug or small change | go straight to `/flow:plan` |
-| New feature with unknown edge cases | `/flow:interview` → `/flow:plan` |
-| Feature touching multiple modules | `/flow:interview` → `/flow:plan` |
-| Refactoring | `/flow:plan` (no interview) |
-| Fix after `/flow:final-check` issues | `/flow:implement fix "description"` |
+| New feature with unknown edge cases | `/flow:new` → `/flow:plan` |
+| Feature touching multiple modules | `/flow:new` → `/flow:plan` |
+| Refactoring | `/flow:plan` (no brief needed) |
+| Fix after `/flow:check` issues | `/flow:implement fix "description"` |
 | Review code quality after a phase | `/flow:review phase-N` |
-| Review entire feature before final-check | `/flow:review all` |
+| Review entire feature before check | `/flow:review all` |
 | Feature done and verified; ready for next one | `/flow:archive` |
 
 ## .flow-spec/ Structure
@@ -77,15 +77,15 @@ The agent reads only files — it does not remember the previous chat.
 ```
 .flow-spec/
   project.md              ← project metadata (language, typing, build/lint/test commands)
-                            written once per project, drafted by /flow:interview, required by /flow:implement and /flow:review
-  interview-brief.md      ← input for /flow:plan
+                            written once per project, drafted by /flow:new, required by /flow:implement and /flow:review
+  feature-brief.md      ← input for /flow:plan
   feature-plan.md         ← input for /flow:implement
   validation-report.md    ← internal artifact of /flow:plan
   phase-1-result.md       ← output of /flow:implement phase-1
   phase-2-result.md       ← output of /flow:implement phase-2
   review-N-report.md      ← output of /flow:review phase-N
   review-all-report.md    ← output of /flow:review all
-  final-check-result.md   ← output of /flow:final-check
+  check-result.md   ← output of /flow:check
 ```
 
 **Add `.flow-spec/` to `.gitignore`** — these are working artifacts, not part of the code.
@@ -105,7 +105,7 @@ Unlike `.flow-spec/`, `docs/flow/` is meant to be **committed** — it becomes t
 project's permanent history of what was built and why. After `/flow:archive`
 runs, `.flow-spec/` is left with only `project.md`.
 
-## Fixing Issues After /flow:final-check
+## Fixing Issues After /flow:check
 
 ```
 /flow:implement fix "issue name"
@@ -113,7 +113,7 @@ runs, `.flow-spec/` is left with only `project.md`.
 
 New chat. Provide:
 - `feature-plan.md`
-- `final-check-result.md` (with the issue description)
+- `check-result.md` (with the issue description)
 
 The agent sees a specific scope and does not touch anything else.
 
@@ -153,8 +153,8 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 
 ## Tips
 
-- **Be specific in the interview.** Concrete scenarios ("when the user submits the signup form with an email that already exists") produce better briefs than vague descriptions ("handle edge cases in registration").
+- **Be specific in the brief.** Concrete scenarios ("when the user submits the signup form with an email that already exists") produce better briefs than vague descriptions ("handle edge cases in registration").
 - **Review the plan before implementing.** Two minutes reading `feature-plan.md` saves hours of rework. Check that phases are ordered correctly and nothing critical is missing.
 - **Run `/flow:review` early.** Don't wait until all phases are done — reviewing after phase 1 catches style and pattern drift before it compounds across later phases.
 - **Keep phases small.** If a phase has more than ~10 steps, it's probably two phases. Smaller phases are easier to verify and cheaper to redo if something goes wrong.
-- **Use `/flow:plan` with a description for quick fixes.** For simple bugs, `/flow:plan Fix the login redirect loop` skips the interview and generates a minimal brief automatically.
+- **Use `/flow:plan` with a description for quick fixes.** For simple bugs, `/flow:plan Fix the login redirect loop` skips the brief and generates a minimal brief automatically.
