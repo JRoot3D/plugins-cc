@@ -171,7 +171,7 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
       ↓ fresh planner (opus) → /flow:plan → plan
       ↓ for each phase:
            implementer (sonnet) → /flow:implement phase-N
-           reviewer (sonnet)    → /flow:review
+           reviewer (sonnet)    → /flow:review phase-N
            (loop until review passes)
       ↓ checker (sonnet) → /flow:check → done
 ```

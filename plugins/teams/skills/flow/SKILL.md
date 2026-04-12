@@ -49,7 +49,7 @@ Feature request received
 ```
 Phase N ready
   → Spawn implementer (Sonnet) → /serena:activate → /flow:implement phase-N
-  → Implementation done → Spawn reviewer (Sonnet) → /serena:activate → /flow:review
+  → Implementation done → Spawn reviewer (Sonnet) → /serena:activate → /flow:review phase-N
   → If review passes → shut down BOTH → next phase
   → If review has issues → relay fixes to implementer (still alive) → implementer fixes
     → reviewer re-reviews → repeat until passes → shut down BOTH
@@ -138,7 +138,7 @@ Agent(name: "implementer", model: sonnet, team_name: <team>)
 Agent(name: "reviewer", model: sonnet, team_name: <team>)
   Prompt includes:
   - /serena:activate as first step  
-  - /flow:review
+  - /flow:review phase-N
   - Summary of what was implemented
   - What to check
 ```
