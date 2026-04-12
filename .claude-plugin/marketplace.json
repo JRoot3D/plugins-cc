@@ -3,7 +3,7 @@
   "owner": {
     "name": "JRoot3D"
   },
-  "description": "JRoot3D's Claude Code plugins: flow workflow + serena memory helpers",
+  "description": "JRoot3D's Claude Code plugins: flow workflow + serena memory helpers + teams orchestration",
   "plugins": [
     {
       "name": "flow",
@@ -14,6 +14,11 @@
       "name": "serena",
       "source": "./plugins/serena",
       "description": "Serena MCP helper skills: activate, onboarding, update. Requires the Serena MCP server."
+    },
+    {
+      "name": "teams",
+      "source": "./plugins/teams",
+      "description": "Multi-agent feature development team (Planner / Implementer / Reviewer). Requires the flow and serena plugins and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1."
     }
   ]
 }

@@ -1,9 +1,10 @@
 # AI Development Workflow
 
-A Claude Code marketplace containing two plugins:
+A Claude Code marketplace containing three plugins:
 
 - **`flow`** — multi-agent feature workflow. Skills: `flow:new`, `flow:plan`, `flow:implement`, `flow:review`, `flow:check`, `flow:archive`.
 - **`serena`** — Serena MCP helpers. Skills: `serena:activate`, `serena:onboarding`, `serena:update`. (Requires the [Serena MCP server](https://github.com/oraios/serena) to be installed separately.)
+- **`teams`** — multi-agent team orchestration. Skill: `teams:flow`. Requires the `flow` and `serena` plugins and an experimental Claude Code setting (see [Teams](#teams)).
 
 ## Install
 
@@ -11,6 +12,7 @@ A Claude Code marketplace containing two plugins:
 /plugin marketplace add JRoot3D/plugins-cc
 /plugin install flow@plugins-cc
 /plugin install serena@plugins-cc
+/plugin install teams@plugins-cc
 ```
 
 ## Flow
@@ -158,3 +160,34 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 - **Run `/flow:review` early.** Don't wait until all phases are done — reviewing after phase 1 catches style and pattern drift before it compounds across later phases.
 - **Keep phases small.** If a phase has more than ~10 steps, it's probably two phases. Smaller phases are easier to verify and cheaper to redo if something goes wrong.
 - **Use `/flow:plan` with a description for quick fixes.** For simple bugs, `/flow:plan Fix the login redirect loop` skips the brief and generates a minimal brief automatically.
+
+## Teams
+
+`teams:flow` spins up a 3-agent team (Planner on Opus, Implementer + Reviewer on Sonnet) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
+
+```
+/teams:flow   (or: "spin up a team", "use the flow team")
+      ↓ TeamCreate → planner (opus) → /flow:new → brief
+      ↓ fresh planner (opus) → /flow:plan → plan
+      ↓ for each phase:
+           implementer (sonnet) → /flow:implement phase-N
+           reviewer (sonnet)    → /flow:review
+           (loop until review passes)
+      ↓ checker (sonnet) → /flow:check → done
+```
+
+### Prerequisites
+
+1. **Enable the experimental agent-teams flag.** Add this to your Claude Code settings (`~/.claude/settings.json` or project `.claude/settings.json`) and restart Claude Code:
+
+   ```json
+   {
+     "env": {
+       "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+     }
+   }
+   ```
+
+   This flag is experimental and may change. Without it, `TeamCreate` and multi-agent spawning will not work.
+
+2. **Install the `flow` and `serena` plugins** from this marketplace. `teams:flow` dispatches `/flow:*` skills to spawned agents, and every agent runs `/serena:activate` first for semantic code navigation. (The `serena` plugin also requires the Serena MCP server — see [Serena](#serena).)

@@ -6,10 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code **plugin marketplace**, not a normal code project. There is no source code to build, no test suite, no linter. The "deliverables" are `SKILL.md` markdown files that Claude Code loads as skills at runtime. Treat changes here like editing prompts: correctness is checked by reading the skills end-to-end and by running them against a real project, not by `npm test`.
 
-The marketplace is declared in `.claude-plugin/marketplace.json` and currently ships two plugins:
+The marketplace is declared in `.claude-plugin/marketplace.json` and currently ships three plugins:
 
 - **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `archive`).
 - **`serena`** — three helpers around the external Serena MCP server (`activate`, `onboarding`, `update`). The MCP server itself is **not** in this repo; these skills assume it is installed separately.
+- **`teams`** — a single skill (`teams:flow`) that orchestrates a 3-agent team (Planner/Implementer/Reviewer) running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning. Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
 
 ## Repo layout
 
@@ -22,6 +23,9 @@ plugins/
   serena/
     .claude-plugin/plugin.json
     skills/<name>/SKILL.md
+  teams/
+    .claude-plugin/plugin.json
+    skills/flow/SKILL.md
 README.md                         # user-facing docs mirror
 ```
 
