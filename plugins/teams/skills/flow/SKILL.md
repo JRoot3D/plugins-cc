@@ -1,11 +1,11 @@
 ---
 name: flow
-description: "Orchestrate a 3-agent feature development team (Planner, Implementer, Reviewer) that develops features through a phased pipeline with fresh-context spawning. Use this skill whenever the user asks to 'spin up a team', 'use the flow team', 'create a feature team', 'orchestrate agents', 'run the dev pipeline', or wants multiple agents collaborating on feature development with briefs, plans, implementation, and code review. Also trigger when user says '/teams:flow' or 'team workflow'."
+description: "Orchestrate a 4-agent feature development team (Planner, Implementer, Reviewer, Checker) that develops features through a phased pipeline with fresh-context spawning. Use this skill whenever the user asks to 'spin up a team', 'use the flow team', 'create a feature team', 'orchestrate agents', 'run the dev pipeline', or wants multiple agents collaborating on feature development with briefs, plans, implementation, code review, and final verification. Also trigger when user says '/teams:flow' or 'team workflow'."
 ---
 
 # Flow Team — Phased Feature Development Pipeline
 
-You are the **team lead** orchestrating a 3-agent feature development pipeline. Your job is to coordinate agents, relay communication between them and the user, manage tasks, and enforce the lifecycle rules below.
+You are the **team lead** orchestrating a 4-agent feature development pipeline. Your job is to coordinate agents, relay communication between them and the user, manage tasks, and enforce the lifecycle rules below.
 
 ## Prerequisites
 
@@ -21,15 +21,18 @@ This skill requires:
    ```
    Restart Claude Code after adding. Without this, `TeamCreate` / agent spawning will not work.
 2. **`flow` plugin** from `plugins-cc` installed — the skill dispatches `/flow:new`, `/flow:plan`, `/flow:implement`, `/flow:review`, `/flow:check` to spawned agents.
-3. **`serena` plugin** from `plugins-cc` installed — every spawned agent runs `/serena:activate` first for semantic code navigation. (Also requires the Serena MCP server to be installed.)
+3. **`serena` plugin** from `plugins-cc` installed — every spawned agent runs `/serena:activate` first for semantic code navigation. (Also requires the Serena MCP server to be installed. Agents fall back to standard tools if Serena is unavailable.)
 
-## The Three Agents
+The four agent definitions (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`) ship with this plugin under `agents/` — no extra install needed. They own the role-specific instructions, tool allowlists, and exit-gate contracts; this skill orchestrates them.
 
-| Role | Model | Purpose | Skills Used |
-|------|-------|---------|-------------|
-| **Planner** | Opus | Creates feature briefs and implementation plans | `/flow:new`, `/flow:plan` |
-| **Implementer** | Sonnet | Implements features phase-by-phase | `/flow:implement phase-N` |
-| **Reviewer** | Sonnet | Reviews code quality and correctness | `/flow:review`, `/flow:check` |
+## The Four Agents
+
+| Role | `subagent_type` | Model | Purpose | Skills Used |
+|------|-----------------|-------|---------|-------------|
+| **Planner** | `flow-planner` | Opus | Creates feature briefs and implementation plans | `/flow:new`, `/flow:plan` |
+| **Implementer** | `flow-implementer` | Sonnet | Implements features phase-by-phase | `/flow:implement phase-N` |
+| **Reviewer** | `flow-reviewer` | Sonnet | Reviews a single phase (read-only) | `/flow:review` |
+| **Checker** | `flow-checker` | Opus | Final feature verification + writes `check-result.md` | `/flow:check` |
 
 ## Agent Lifecycle — Fresh Context is the Rule
 
@@ -38,18 +41,18 @@ Every agent gets a **fresh spawn** for each discrete step. This prevents stale c
 ### Planner Lifecycle
 ```
 Feature request received
-  → Spawn planner (Opus) → /serena:activate → /flow:new (brief)
+  → Spawn flow-planner (Opus, mode: brief) → produces feature-brief.md
   → Relay planner questions to user, relay answers back
   → Brief complete → shut down planner
-  → Spawn FRESH planner (Opus) → /serena:activate → /flow:plan (plan)
+  → Spawn FRESH flow-planner (Opus, mode: plan) → produces feature-plan.md
   → Plan complete → shut down planner
 ```
 
 ### Implementer + Reviewer Lifecycle (per phase)
 ```
 Phase N ready
-  → Spawn implementer (Sonnet) → /serena:activate → /flow:implement phase-N
-  → Implementation done → Spawn reviewer (Sonnet) → /serena:activate → /flow:review phase-N
+  → Spawn flow-implementer (Sonnet, phase-N) → produces phase-N-result.md
+  → Implementation done → Spawn flow-reviewer (Sonnet, phase-N) → produces review-N-report.md
   → If review passes → shut down BOTH → next phase
   → If review has issues → relay fixes to implementer (still alive) → implementer fixes
     → reviewer re-reviews → repeat until passes → shut down BOTH
@@ -58,15 +61,13 @@ Phase N ready
 ### Final Check
 ```
 All phases complete
-  → Spawn reviewer (Sonnet) → /serena:activate → /flow:check
+  → Spawn flow-checker (Opus) → /flow:check → writes check-result.md
   → Check passes → shut down → report to user
 ```
 
 ## Serena Activation
 
-Every agent runs `/serena:activate` as its **first step** before doing any work. This gives it codebase awareness through Serena's semantic tools. Include this instruction in every agent prompt.
-
-If Serena MCP is not available in the project, skip this step — the agents will fall back to standard tools.
+Each agent definition already runs `/serena:activate` as its first step and falls back to standard tools if Serena is unavailable. The team lead does **not** need to include that instruction in spawn prompts.
 
 ## Step-by-Step Orchestration
 
@@ -80,11 +81,12 @@ TeamCreate → team name based on feature (e.g., "midi-export", "history-limit")
 
 ### 2. Brief Phase
 
-Spawn the planner **with `model: "opus"`** with a prompt that includes:
+Spawn the planner via `subagent_type: "flow-planner"` with `model: "opus"` and a short prompt that includes only:
+- `mode: brief`
 - The feature request (as described by the user)
-- Instruction to run `/serena:activate` first
-- Instruction to run `/flow:new`
-- Instruction to send results back to "team-lead"
+- Any user-locked decisions to record without re-asking
+
+The agent definition handles `/serena:activate`, `/flow:new`, and the output contract.
 
 **Relay role**: The planner will often have clarifying questions. Your job is to:
 1. Receive the planner's questions
@@ -98,10 +100,10 @@ Once the brief is complete, shut down the planner.
 
 ### 3. Plan Phase
 
-Spawn a **fresh** planner (new context, **`model: "opus"`**) with:
+Spawn a **fresh** planner via `subagent_type: "flow-planner"` with `model: "opus"`. Prompt includes only:
+- `mode: plan`
 - Reference to the brief at `.flow-spec/feature-brief.md`
 - Any user-confirmed decisions from the brief phase
-- Instruction to run `/serena:activate` then `/flow:plan`
 
 Once the plan is ready, shut down the planner.
 
@@ -119,14 +121,13 @@ For each phase, in order:
 
 **Spawn implementer:**
 ```
-Agent(name: "implementer", model: sonnet, team_name: <team>)
+Agent(subagent_type: "flow-implementer", model: "sonnet", team_name: <team>)
   Prompt includes:
-  - /serena:activate as first step
-  - /flow:implement phase-N
-  - Reference to plan at .flow-spec/feature-plan.md
-  - Phase-specific summary of what to build
-  - Project conventions reminder (run flutter analyze, tests, etc.)
+  - phase-N (the phase number to implement)
+  - One-line phase summary from the plan
+  - Reference to .flow-spec/feature-plan.md
 ```
+The agent definition handles `/serena:activate`, `/flow:implement phase-N`, and the exit-gate checklist (build/type-check/lint/test commands from `.flow-spec/project.md`).
 
 **When implementer reports done:**
 - Do NOT shut down the implementer yet
@@ -135,13 +136,12 @@ Agent(name: "implementer", model: sonnet, team_name: <team>)
 
 **Spawn reviewer:**
 ```
-Agent(name: "reviewer", model: sonnet, team_name: <team>)
+Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>)
   Prompt includes:
-  - /serena:activate as first step  
-  - /flow:review phase-N
-  - Summary of what was implemented
-  - What to check
+  - phase-N (the phase number to review)
+  - One-line summary of what was implemented
 ```
+The agent definition handles `/serena:activate`, `/flow:review phase-N`, the verification checklist, and the PASSED-or-issues output format.
 
 **Review outcome:**
 - **Passes** → Shut down both implementer and reviewer → move to next phase
@@ -152,10 +152,10 @@ Agent(name: "reviewer", model: sonnet, team_name: <team>)
 After all phases pass review:
 
 ```
-Agent(name: "checker", model: sonnet, team_name: <team>)
-  Prompt: /serena:activate → /flow:check
-  Verifies the complete feature against the original brief
+Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>)
+  Prompt: feature name + reminder that check-result.md must be persisted
 ```
+The agent definition handles `/serena:activate`, `/flow:check`, re-running the gates from `.flow-spec/project.md`, and writing `.flow-spec/check-result.md` (without which `/flow:archive` will hard-stop).
 
 ### 7. Wrap Up
 
@@ -189,44 +189,24 @@ Always pass `model:` explicitly when calling the Agent tool. Never rely on the d
 | Planner (plan) | `"opus"` | Needs deep reasoning to produce a sound, validated plan |
 | Implementer | `"sonnet"` | Fast, capable coder — Opus is overkill for execution |
 | Reviewer | `"sonnet"` | Fast, capable reviewer — same reasoning |
-| Checker | `"sonnet"` | Final verification pass — same reasoning |
+| Checker | `"opus"` | Final verification against the brief — needs deep reasoning to catch regressions and gaps |
 
 **Concrete Agent call shapes:**
 ```
-# Planner
-Agent(name: "planner", model: "opus", team_name: <team>, prompt: ...)
+# Planner (brief or plan, set via mode: in prompt)
+Agent(subagent_type: "flow-planner", model: "opus", team_name: <team>, prompt: ...)
 
 # Implementer
-Agent(name: "implementer", model: "sonnet", team_name: <team>, prompt: ...)
+Agent(subagent_type: "flow-implementer", model: "sonnet", team_name: <team>, prompt: ...)
 
 # Reviewer
-Agent(name: "reviewer", model: "sonnet", team_name: <team>, prompt: ...)
+Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>, prompt: ...)
 
 # Checker
-Agent(name: "checker", model: "sonnet", team_name: <team>, prompt: ...)
+Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>, prompt: ...)
 ```
 
-## Agent Prompt Template
-
-Every agent prompt should follow this structure:
-
-```
-You are the **{Role}** on the "{team-name}" team for {project description} at {working directory}.
-
-## First Step
-Run the skill `/serena:activate` to activate Serena for codebase awareness.
-
-## Then
-Run the skill `{/flow:skill}` to {task description}.
-
-{Context about what to do, referencing .flow-spec/ files}
-
-## Important
-- Read CLAUDE.md for project conventions
-- {Project-specific checks like "run flutter analyze", "run tests", etc.}
-
-When done, send results to "team-lead" (me).
-```
+The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts only need to supply per-call context: the feature request, the mode (`brief`/`plan`), the phase number, and any user-locked decisions.
 
 ## Error Recovery
 

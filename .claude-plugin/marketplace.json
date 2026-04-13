@@ -18,7 +18,7 @@
     {
       "name": "teams",
       "source": "./plugins/teams",
-      "description": "Multi-agent feature development team (Planner / Implementer / Reviewer). Requires the flow and serena plugins and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1."
+      "description": "Multi-agent feature development team (Planner / Implementer / Reviewer / Checker). Requires the flow and serena plugins and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1."
     }
   ]
 }
