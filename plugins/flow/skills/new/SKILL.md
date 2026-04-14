@@ -24,9 +24,12 @@ File `.flow-spec/feature-brief.md`
 ### Step 1 — Bootstrap Project Metadata
 `/flow:implement` and `/flow:review` both require `.flow-spec/project.md` (see the `/flow:review` skill for its full template). If it does not already exist, create a draft now — before the feature brief begins — so downstream skills have deterministic build / lint / test commands.
 
-1. **Check** — if `.flow-spec/project.md` already exists, skip to Step 2.
+1. **Check** —
+   - If `.flow-spec/project.md` does not exist → proceed to sub-step 2 (Detect).
+   - If it exists and contains any line with `# unverified` → the previous run saved a draft that was never confirmed. Re-show the current file to the user, say: *"Previous `.flow-spec/project.md` draft still has `# unverified` fields. Please confirm or correct them before we start the feature brief."* Then jump directly to sub-step 5 (Wait) with the existing file — do **not** regenerate it and do **not** re-use sub-step 4's "I generated a draft…" message (nothing was generated this run).
+   - If it exists with no `# unverified` markers → skip to Step 2 (Initial Analysis).
 
-2. **Detect** — scan the project root (and one directory level deep) for common manifest files and infer a draft. Apply these rules in order; stop at the first match, but note secondary manifests if the project is polyglot:
+2. **Detect** — scan the project root (and one directory level deep) for common manifest files and infer a draft. Apply these rules in order and stop at the first match. For polyglot projects, the user can correct the draft manually during the confirm step:
 
    - `package.json` + `tsconfig.json` → **TypeScript**. Commands: `build: npm run build` (or the script named `build` in `package.json`), `type_check: tsc --noEmit`, `lint: eslint .`, `test: npm test`.
    - `package.json` without `tsconfig.json` → **JavaScript**. Commands: `build` from `scripts` or `"none"`, `type_check: "none"`, `lint: eslint .`, `test: npm test`.
@@ -34,13 +37,13 @@ File `.flow-spec/feature-brief.md`
    - `Cargo.toml` → **Rust**. Commands: `build: cargo build`, `type_check: cargo check`, `lint: cargo clippy`, `test: cargo test`.
    - `go.mod` → **Go**. Commands: `build: go build ./...`, `type_check: "none"` (folded into build), `lint: golangci-lint run` if configured else `go vet ./...`, `test: go test ./...`.
    - `Gemfile` → **Ruby**. Commands: `build: "none"`, `type_check: srb tc` only if Sorbet is configured else `"none"`, `lint: rubocop` if configured else `"none"`, `test: rspec` if present else `rake test`.
-   - `pom.xml` → **Java / Maven**. Commands: `build: mvn compile`, `test: mvn test`.
-   - `build.gradle` / `build.gradle.kts` → **Java or Kotlin** (check sources to decide). Commands: `build: ./gradlew build`, `test: ./gradlew test`.
-   - `*.csproj` / `*.sln` → **C# / .NET**. Commands: `build: dotnet build`, `test: dotnet test`.
-   - `composer.json` → **PHP**. Commands: `lint: phpstan analyse` or `"none"`, `test: phpunit` or `"none"`.
-   - `mix.exs` → **Elixir**. Commands: `build: mix compile`, `lint: mix credo` if configured else `"none"`, `test: mix test`.
-   - `Package.swift` → **Swift**. Commands: `build: swift build`, `test: swift test`.
-   - `pubspec.yaml` → **Dart / Flutter**. Commands: `test: flutter test` or `dart test`.
+   - `pom.xml` → **Java / Maven**. Commands: `build: mvn compile`, `type_check: "none"` (folded into build), `lint: mvn checkstyle:check` if the plugin is configured else `"none"`, `test: mvn test`.
+   - `build.gradle` / `build.gradle.kts` → **Java or Kotlin** (check sources to decide). Commands: `build: ./gradlew build`, `type_check: "none"` (folded into build), `lint: ./gradlew check` if a linter task is configured else `"none"`, `test: ./gradlew test`.
+   - `*.csproj` / `*.sln` → **C# / .NET**. Commands: `build: dotnet build`, `type_check: "none"` (folded into build), `lint: dotnet build /warnaserror` if Roslyn analyzers are referenced (e.g., `Microsoft.CodeAnalysis.NetAnalyzers`, StyleCop, `.editorconfig` with analyzer rules) else `dotnet format --verify-no-changes` as a style-only fallback if configured, else `"none"`, `test: dotnet test`.
+   - `composer.json` → **PHP**. Commands: `build: "none"`, `type_check: phpstan analyse` if configured else `"none"`, `lint: php-cs-fixer fix --dry-run` if configured else `"none"`, `test: phpunit` if present else `"none"`.
+   - `mix.exs` → **Elixir**. Commands: `build: mix compile`, `type_check: mix dialyzer` if Dialyxir is configured else `"none"`, `lint: mix credo` if configured else `"none"`, `test: mix test`.
+   - `Package.swift` → **Swift**. Commands: `build: swift build`, `type_check: "none"` (folded into build), `lint: swiftlint` if configured else `"none"`, `test: swift test`.
+   - `pubspec.yaml` → **Dart / Flutter**. Commands: `build: flutter build` (Flutter projects) or `"none"` (pure Dart packages), `type_check: dart analyze`, `lint: dart analyze` (same command — Dart folds lint and type-check together), `test: flutter test` for Flutter else `dart test`.
    - **None of the above** → set `language: shell/plain/unknown`, all four commands to `"none"`, and flag every field as `# unverified — please confirm`.
 
    Then infer `static_typing`:
@@ -53,7 +56,7 @@ File `.flow-spec/feature-brief.md`
 4. **Confirm with the user** — show the draft and say:
    > "I generated a draft `.flow-spec/project.md` from the manifest files I found in this project. Please review it, correct any `# unverified` fields, and confirm before we start the feature brief."
 
-5. **Wait** for the user's response. If they correct any fields, apply the corrections to the file. If they want to edit the file manually first, save the draft as-is and tell them:
+5. **Wait** for the user's response. If they correct any fields, apply the corrections to the file. If they want to edit the file manually first (the draft from sub-step 3 is already on disk), tell them:
    > "Draft saved. Edit `.flow-spec/project.md` and re-run `/flow:new` when you're ready."
    Then stop the skill here — do not continue to Step 2.
 

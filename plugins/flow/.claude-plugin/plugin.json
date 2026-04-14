@@ -1,7 +1,7 @@
 {
   "name": "flow",
-  "description": "Multi-agent feature workflow: new -> plan -> implement -> review -> check -> archive",
-  "version": "0.3.0",
+  "description": "Multi-agent feature workflow: new -> plan -> implement -> review -> check -> compact",
+  "version": "0.4.1",
   "author": {
     "name": "JRoot3D"
   }

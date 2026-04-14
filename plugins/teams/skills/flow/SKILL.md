@@ -155,7 +155,7 @@ After all phases pass review:
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>)
   Prompt: feature name + reminder that check-result.md must be persisted
 ```
-The agent definition handles `/serena:activate`, `/flow:check`, re-running the gates from `.flow-spec/project.md`, and writing `.flow-spec/check-result.md` (without which `/flow:archive` will hard-stop).
+The agent definition handles `/serena:activate`, `/flow:check`, re-running the gates from `.flow-spec/project.md`, and writing `.flow-spec/check-result.md` (without which `/flow:compact` will hard-stop).
 
 ### 7. Wrap Up
 

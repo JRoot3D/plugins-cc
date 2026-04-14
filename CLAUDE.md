@@ -8,7 +8,7 @@ A Claude Code **plugin marketplace**, not a normal code project. There is no sou
 
 The marketplace is declared in `.claude-plugin/marketplace.json` and currently ships three plugins:
 
-- **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `archive`).
+- **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `compact`).
 - **`serena`** — three helpers around the external Serena MCP server (`activate`, `onboarding`, `update`). The MCP server itself is **not** in this repo; these skills assume it is installed separately.
 - **`teams`** — a single skill (`teams:flow`) that orchestrates a 3-agent team (Planner/Implementer/Reviewer) running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning. Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
 
@@ -60,8 +60,10 @@ review     ──reads──▶  phase-N-result.md + changed source
            ──writes──▶ review-N-report.md
 check──reads──▶  feature-brief.md + all phase-*-result.md
            ──writes──▶ check-result.md  (status: DONE)
-archive    ──reads──▶  everything above
+compact    ──reads──▶  everything above (+ optional feature-docs.md)
            ──writes──▶ docs/flow/<feature-slug>/summary.md  (outside .flow-spec/, meant to be committed)
+                       + optional mental-model.md, decision-log.md, dependency-map.md
+                         (fanned out from feature-docs.md if present)
            ──deletes─▶ all feature-scoped files in .flow-spec/ (keeps project.md)
 ```
 

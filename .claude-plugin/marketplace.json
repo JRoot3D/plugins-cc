@@ -8,7 +8,7 @@
     {
       "name": "flow",
       "source": "./plugins/flow",
-      "description": "Multi-agent feature workflow skills (new, plan, implement, review, check, archive)"
+      "description": "Multi-agent feature workflow skills (new, plan, implement, review, check, compact)"
     },
     {
       "name": "serena",

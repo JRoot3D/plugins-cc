@@ -18,8 +18,13 @@ relative to the original brief — not relative to the plan.
 - `.flow-spec/feature-plan.md`
 - `.flow-spec/phase-*-result.md` — all result files
 
-**If any file is missing or a phase does not have status VERIFIED** — stop:
-> "Not all phases are verified. Check the status in phase-*-result.md files"
+**Preconditions (hard stops):**
+
+1. If `.flow-spec/feature-brief.md` or `.flow-spec/feature-plan.md` is missing — stop:
+   > "Brief or plan not found. Run `/flow:new` and `/flow:plan` before `/flow:check`."
+
+2. Read `feature-plan.md` and count headings matching the regex `^### Phase \d+:` — call this `P`. (Plain-text scans for `### Phase ` are too loose: a plan author may write `### Phase Summary` or `### Phase Notes`, which must not be counted as phases.) For each `K` in `1..P`, verify `.flow-spec/phase-K-result.md` exists **and** contains `Status: VERIFIED`. If any is missing or unverified — stop with the first offending `K`:
+   > "Phase K of P is missing or not VERIFIED. Run `/flow:implement phase-K` before `/flow:check`."
 
 ---
 

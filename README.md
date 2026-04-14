@@ -2,7 +2,7 @@
 
 A Claude Code marketplace containing three plugins:
 
-- **`flow`** — multi-agent feature workflow. Skills: `flow:new`, `flow:plan`, `flow:implement`, `flow:review`, `flow:check`, `flow:archive`.
+- **`flow`** — multi-agent feature workflow. Skills: `flow:new`, `flow:plan`, `flow:implement`, `flow:review`, `flow:check`, `flow:compact`.
 - **`serena`** — Serena MCP helpers. Skills: `serena:activate`, `serena:onboarding`, `serena:update`. (Requires the [Serena MCP server](https://github.com/oraios/serena) to be installed separately.)
 - **`teams`** — multi-agent team orchestration. Skill: `teams:flow`. Requires the `flow` and `serena` plugins and an experimental Claude Code setting (see [Teams](#teams)).
 
@@ -41,7 +41,7 @@ A Claude Code marketplace containing three plugins:
       ↓ reads:   feature-brief.md + all phase-*-result.md
       ↓ creates: check-result.md
 
-/flow:archive             ← new chat, after /flow:check passes
+/flow:compact             ← new chat, after /flow:check passes
       ↓ reads:   feature-brief.md + feature-plan.md + all phase/review/check files
       ↓ creates: docs/flow/<feature-slug>/summary.md   (committable, outside .flow-spec/)
       ↓ deletes: all feature-scoped files in .flow-spec/ (keeps project.md)
@@ -56,7 +56,7 @@ A Claude Code marketplace containing three plugins:
 | phase-N → flow:review | same chat or new chat — both work |
 | flow:review → phase-N+1 | **mandatory** new chat |
 | last phase → flow:check | new chat |
-| flow:check → flow:archive | new chat |
+| flow:check → flow:compact | new chat |
 
 **Rule:** every `/flow:implement` starts with a clean context.
 The agent reads only files — it does not remember the previous chat.
@@ -72,7 +72,7 @@ The agent reads only files — it does not remember the previous chat.
 | Fix after `/flow:check` issues | `/flow:implement fix "description"` |
 | Review code quality after a phase | `/flow:review phase-N` |
 | Review entire feature before check | `/flow:review all` |
-| Feature done and verified; ready for next one | `/flow:archive` |
+| Feature done and verified; ready for next one | `/flow:compact` |
 
 ## .flow-spec/ Structure
 
@@ -93,18 +93,21 @@ The agent reads only files — it does not remember the previous chat.
 **Add `.flow-spec/` to `.gitignore`** — these are working artifacts, not part of the code.
 Or commit them if you want a decision history — your call.
 
-`/flow:archive` writes the consolidated summary **outside** `.flow-spec/`, into
+`/flow:compact` writes the consolidated summary **outside** `.flow-spec/`, into
 the project's `docs/` tree:
 
 ```
 docs/
   flow/
     <feature-slug>/
-      summary.md          ← output of /flow:archive: self-contained record of the completed feature
+      summary.md          ← output of /flow:compact: self-contained record of the completed feature
+      mental-model.md     ← optional companion (from ## Mental Model in feature-plan.md or feature-docs.md)
+      decision-log.md     ← optional companion (from ## Decision Log in feature-plan.md or feature-docs.md)
+      dependency-map.md   ← optional companion (from ## Dependency Map in feature-plan.md or feature-docs.md)
 ```
 
 Unlike `.flow-spec/`, `docs/flow/` is meant to be **committed** — it becomes the
-project's permanent history of what was built and why. After `/flow:archive`
+project's permanent history of what was built and why. After `/flow:compact`
 runs, `.flow-spec/` is left with only `project.md`.
 
 ## Fixing Issues After /flow:check

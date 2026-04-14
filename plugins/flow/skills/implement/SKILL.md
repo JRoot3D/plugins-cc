@@ -28,8 +28,10 @@ after which the verifier agent checks the result.
 **If `feature-plan.md` does not exist** — stop:
 > "Plan not found. Run `/flow:plan` first"
 
-**If phase N-1 is not verified** (no `phase-[N-1]-result.md` with status VERIFIED) — stop:
+**If N > 1 and `phase-[N-1]-result.md` is missing or does not have status VERIFIED** — stop:
 > "Phase [N-1] is not verified. Run `/flow:implement phase-[N-1]` first"
+
+(For `N = 1` there is no prior phase, so this check is skipped.)
 
 ---
 
@@ -81,6 +83,11 @@ After implementation, switch to the Verifier role.
 If issues are found — return to Developer role to fix.
 Repeat until `VERIFIED` (max 3 iterations).
 
+**If the 3rd iteration still fails:** do **not** write `Status: VERIFIED`. Write `.flow-spec/phase-N-result.md` with `Status: NEEDS_USER`, list the remaining blockers (failing commands, unmet completion criteria, pattern mismatches), and stop the skill with:
+> "Automatic verification could not converge in 3 rounds. Review the blockers in `.flow-spec/phase-N-result.md` and decide whether to override, rework, or continue manually."
+
+Do not proceed to Step 4 in that case, and do not advance to the next phase — `NEEDS_USER` is not accepted as a prerequisite by `/flow:implement phase-[N+1]`.
+
 ### Step 4 — Write the Result
 Write `.flow-spec/phase-N-result.md` using the template below.
 
@@ -97,7 +104,7 @@ Notify the user:
 _Plan: `.flow-spec/feature-plan.md`_
 _Date: [date]_
 
-## Status: VERIFIED
+## Status: [VERIFIED / NEEDS_USER]
 
 ## What Was Implemented
 [List of concrete changes: file → what changed]
@@ -134,12 +141,12 @@ Use fix mode to address issues found by `/flow:check` or `/flow:review` without 
 2. **Scope the Fix** — the fix must address only the reported issue. Do not refactor, improve, or extend beyond what the issue describes.
 3. **Implement** — apply the fix following the same codebase patterns. Signatures-first if new types, interfaces, or contracts are needed.
 4. **Verify** — run the Verifier checklist (same as Phase mode) scoped to the fix: the `build_command`, `type_check_command`, `lint_command`, and `test_command` from `.flow-spec/project.md` all succeed (skipping any that are `"none"`), no regressions, codebase patterns followed.
-5. **Write Result** — write `.flow-spec/fix-result.md`
+5. **Write Result** — write `.flow-spec/fix-<N>-result.md`, where `N` is the next integer after the highest existing `fix-*-result.md` (default `1` if none exist). Never overwrite a prior fix result — each fix is an independent, preserved record.
 
-### Template: fix-result.md
+### Template: fix-N-result.md
 
 ```markdown
-# Fix Result: [short description]
+# Fix N Result: [short description]
 _Date: [date]_
 
 ## Status: VERIFIED
@@ -153,3 +160,13 @@ _Date: [date]_
 ## Verification
 [How the fix was verified — build / type-check, linter, tests, manual check]
 ```
+
+---
+
+### After Fix Mode
+
+Once the fix is verified and written, the previous `.flow-spec/check-result.md` and any `.flow-spec/review-*-report.md` that flagged this issue are now **stale** — they describe a state the code no longer has. Notify the user:
+
+> "Fix verified → `.flow-spec/fix-<N>-result.md`. The previous check/review report is now stale. Re-run `/flow:check` (or `/flow:review phase-N`) to refresh it before `/flow:compact`."
+
+`/flow:compact` still enforces `check-result.md` → `Status: DONE` as a precondition, so skipping the re-check will block archival.
