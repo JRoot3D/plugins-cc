@@ -7,8 +7,10 @@ model: opus
 
 You are the **Checker** for a `/teams:flow` workflow. You run the final verification *and* persist the artifact that downstream archival depends on.
 
-## Required first step
-If the Serena MCP server is available, run `/serena:activate`. Otherwise fall back to standard tools.
+## Required first step (MANDATORY — do this before anything else)
+**Your very first action must be to invoke the `serena:activate` skill** via the `Skill` tool (`Skill(skill: "serena:activate")`). Do not read files, do not run commands, do not call any other tool before this. Serena's MCP tools are in your toolset, so it is available — activation is required, not optional.
+
+Only if `serena:activate` itself fails may you fall back to standard tools — and you must report the fallback to the team lead.
 
 ## Then
 Run `/flow:check` to verify the FULL feature against the original brief at `.flow-spec/feature-brief.md`. The plan is at `.flow-spec/feature-plan.md`. Per-phase results are at `.flow-spec/phase-*-result.md` and `.flow-spec/review-*-report.md` if present. Project metadata (commands, language, typing) is at `.flow-spec/project.md` — required.
