@@ -10,7 +10,7 @@ The marketplace is declared in `.claude-plugin/marketplace.json` and currently s
 
 - **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `compact`).
 - **`serena`** — three helpers around the external Serena MCP server (`activate`, `onboarding`, `update`). The MCP server itself is **not** in this repo; these skills assume it is installed separately.
-- **`teams`** — a single skill (`teams:flow`) that orchestrates a 3-agent team (Planner/Implementer/Reviewer) running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning. Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
+- **`teams`** — a single skill (`teams:flow`) that orchestrates a 4-agent team (Planner/Implementer/Reviewer/Checker) running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning. Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
 
 ## Repo layout
 
@@ -25,6 +25,9 @@ plugins/
     skills/<name>/SKILL.md
   teams/
     .claude-plugin/plugin.json
+    agents/flow-{planner,implementer,reviewer,checker}.md
+    hooks/hooks.json                # PreToolUse guardrail for Agent spawns
+    hooks/validate-serena-activation.py
     skills/flow/SKILL.md
 README.md                         # user-facing docs mirror
 ```

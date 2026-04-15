@@ -1,0 +1,17 @@
+{
+  "description": "Hard-enforces the canonical serena:activate first-line instruction on every flow-* subagent spawn. Without this, activation is purely prompt-based and can drift; with it, a spawn missing the line is blocked before the subagent runs.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/validate-serena-activation.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

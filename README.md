@@ -166,7 +166,7 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 
 ## Teams
 
-`teams:flow` spins up a 3-agent team (Planner on Opus, Implementer + Reviewer on Sonnet) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
+`teams:flow` spins up a 4-agent team (Planner on Opus, Implementer + Reviewer on Sonnet, Checker on Opus) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
 
 ```
 /teams:flow   (or: "spin up a team", "use the flow team")
@@ -176,7 +176,7 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
            implementer (sonnet) → /flow:implement phase-N
            reviewer (sonnet)    → /flow:review phase-N
            (loop until review passes)
-      ↓ checker (sonnet) → /flow:check → done
+      ↓ checker (opus) → /flow:check → done
 ```
 
 ### Prerequisites
@@ -193,4 +193,4 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 
    This flag is experimental and may change. Without it, `TeamCreate` and multi-agent spawning will not work.
 
-2. **Install the `flow` and `serena` plugins** from this marketplace. `teams:flow` dispatches `/flow:*` skills to spawned agents, and every agent runs `/serena:activate` first for semantic code navigation. (The `serena` plugin also requires the Serena MCP server — see [Serena](#serena).)
+2. **Install the `flow` and `serena` plugins** from this marketplace. `teams:flow` dispatches `/flow:*` skills to spawned agents, and the team lead prepends a canonical `First action: invoke Skill(skill: "serena:activate").` line to every spawn prompt. A PreToolUse hook shipped with the `teams` plugin hard-enforces this: any `Agent` call targeting a `flow-*` subagent without that line is blocked before the subagent starts. (The `serena` plugin also requires the Serena MCP server — see [Serena](#serena).)

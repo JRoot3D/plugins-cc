@@ -1,7 +1,7 @@
 {
   "name": "teams",
   "description": "Multi-agent feature development team orchestration. Requires the flow and serena plugins from plugins-cc and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "author": {
     "name": "JRoot3D"
   }

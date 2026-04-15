@@ -21,7 +21,7 @@ This skill requires:
    ```
    Restart Claude Code after adding. Without this, `TeamCreate` / agent spawning will not work.
 2. **`flow` plugin** from `plugins-cc` installed — the skill dispatches `/flow:new`, `/flow:plan`, `/flow:implement`, `/flow:review`, `/flow:check` to spawned agents.
-3. **`serena` plugin** from `plugins-cc` installed — every spawned agent runs `/serena:activate` first for semantic code navigation. (Also requires the Serena MCP server to be installed. Agents fall back to standard tools if Serena is unavailable.)
+3. **`serena` plugin** from `plugins-cc` installed — the team lead instructs every spawned agent to run `/serena:activate` first for semantic code navigation. (Also requires the Serena MCP server to be installed. Agents fall back to standard tools if Serena is unavailable.)
 
 The four agent definitions (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`) ship with this plugin under `agents/` — no extra install needed. They own the role-specific instructions, tool allowlists, and exit-gate contracts; this skill orchestrates them.
 
@@ -67,7 +67,9 @@ All phases complete
 
 ## Serena Activation
 
-Each agent definition already runs `/serena:activate` as its first step and falls back to standard tools if Serena is unavailable. The team lead does **not** need to include that instruction in spawn prompts.
+Every spawn prompt you write **must begin with the canonical first-line instruction**: `` `First action: invoke Skill(skill: "serena:activate").` `` The team lead owns activation because spawned subagents don't reliably self-initiate cross-plugin skills, even though the `Skill` tool is in their allowlist — explicit prompt instructions are far more reliable than self-directed ones from the agent definition. The agent definitions carry a one-line defense-in-depth fallback in case this instruction is ever forgotten. If `/serena:activate` itself fails, the agent falls back to standard tools and reports the fallback.
+
+**Hard guarantee — PreToolUse hook.** The `teams` plugin ships a `hooks/validate-serena-activation.py` PreToolUse hook that inspects every `Agent` tool call: if `subagent_type` is one of `flow-planner` / `flow-implementer` / `flow-reviewer` / `flow-checker` and the prompt's first non-empty line is not the canonical instruction verbatim, the call is blocked (exit 2) with a stderr message that tells you how to fix it. Non-flow `Agent` calls and non-`Agent` tools are ignored. This converts the activation contract from a prompt-only convention into a system-level guarantee: a flow-* subagent cannot start without the instruction in place. If the hook blocks a spawn, re-issue the same `Agent` call with the canonical line prepended — do not work around the block.
 
 ## Step-by-Step Orchestration
 
@@ -81,12 +83,13 @@ TeamCreate → team name based on feature (e.g., "midi-export", "history-limit")
 
 ### 2. Brief Phase
 
-Spawn the planner via `subagent_type: "flow-planner"` with `model: "opus"` and a short prompt that includes only:
+Spawn the planner via `subagent_type: "flow-planner"` with `model: "opus"` and a short prompt that includes, in this order:
+- **First line (verbatim):** `` `First action: invoke Skill(skill: "serena:activate").` ``
 - `mode: brief`
 - The feature request (as described by the user)
 - Any user-locked decisions to record without re-asking
 
-The agent definition handles `/serena:activate`, `/flow:new`, and the output contract.
+The agent definition handles `/flow:new` and the output contract.
 
 **Relay role**: The planner will often have clarifying questions. Your job is to:
 1. Receive the planner's questions
@@ -100,7 +103,8 @@ Once the brief is complete, shut down the planner.
 
 ### 3. Plan Phase
 
-Spawn a **fresh** planner via `subagent_type: "flow-planner"` with `model: "opus"`. Prompt includes only:
+Spawn a **fresh** planner via `subagent_type: "flow-planner"` with `model: "opus"`. Prompt includes, in this order:
+- **First line (verbatim):** `` `First action: invoke Skill(skill: "serena:activate").` ``
 - `mode: plan`
 - Reference to the brief at `.flow-spec/feature-brief.md`
 - Any user-confirmed decisions from the brief phase
@@ -122,12 +126,13 @@ For each phase, in order:
 **Spawn implementer:**
 ```
 Agent(subagent_type: "flow-implementer", model: "sonnet", team_name: <team>)
-  Prompt includes:
+  Prompt includes, in this order:
+  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
   - phase-N (the phase number to implement)
   - One-line phase summary from the plan
   - Reference to .flow-spec/feature-plan.md
 ```
-The agent definition handles `/serena:activate`, `/flow:implement phase-N`, and the exit-gate checklist (build/type-check/lint/test commands from `.flow-spec/project.md`).
+The agent definition handles `/flow:implement phase-N` and the exit-gate checklist (build/type-check/lint/test commands from `.flow-spec/project.md`).
 
 **When implementer reports done:**
 - Do NOT shut down the implementer yet
@@ -137,11 +142,12 @@ The agent definition handles `/serena:activate`, `/flow:implement phase-N`, and 
 **Spawn reviewer:**
 ```
 Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>)
-  Prompt includes:
+  Prompt includes, in this order:
+  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
   - phase-N (the phase number to review)
   - One-line summary of what was implemented
 ```
-The agent definition handles `/serena:activate`, `/flow:review phase-N`, the verification checklist, and the PASSED-or-issues output format.
+The agent definition handles `/flow:review phase-N`, the verification checklist, and the PASSED-or-issues output format.
 
 **Review outcome:**
 - **Passes** → Shut down both implementer and reviewer → move to next phase
@@ -153,9 +159,12 @@ After all phases pass review:
 
 ```
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>)
-  Prompt: feature name + reminder that check-result.md must be persisted
+  Prompt, in this order:
+  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
+  - Feature name
+  - Reminder that check-result.md must be persisted
 ```
-The agent definition handles `/serena:activate`, `/flow:check`, re-running the gates from `.flow-spec/project.md`, and writing `.flow-spec/check-result.md` (without which `/flow:compact` will hard-stop).
+The agent definition handles `/flow:check`, re-running the gates from `.flow-spec/project.md`, and writing `.flow-spec/check-result.md` (without which `/flow:compact` will hard-stop).
 
 ### 7. Wrap Up
 
@@ -206,7 +215,7 @@ Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>, prompt
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>, prompt: ...)
 ```
 
-The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts only need to supply per-call context: the feature request, the mode (`brief`/`plan`), the phase number, and any user-locked decisions.
+The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts supply per-call context (feature request, mode, phase number, user-locked decisions) **and the canonical first-line instruction** (`` `First action: invoke Skill(skill: "serena:activate").` ``) — the team lead owns activation because explicit prompt instructions are more reliable than self-directed ones from an agent definition.
 
 ## Error Recovery
 
