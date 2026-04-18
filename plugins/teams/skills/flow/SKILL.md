@@ -91,20 +91,16 @@ Spawn the planner via `subagent_type: "flow-planner"` with `model: "opus"` and a
 
 The agent definition handles `/flow:new` and the output contract.
 
-**Relay role**: The planner will often have clarifying questions. Your job is to:
-1. Receive the planner's questions
-2. Present them clearly to the user
-3. Wait for the user's answers
-4. Send answers back to the planner
+**Relay role**: The planner will often have clarifying questions. Receive them via `SendMessage`, relay to the user using `AskUserQuestion` per the mechanics in Communication Rule #2 (option synthesis, 12-char `header`, `multiSelect`, 4-question batching), then send the selected labels (and any "Other" free text) back to the planner via `SendMessage`.
 
-Do not answer questions on behalf of the user — always relay.
+Do not answer questions on behalf of the user — always relay. See Communication Rule #2 for the escape hatch (pure status updates / genuinely free-form requests).
 
 Once the brief is complete, shut down the planner.
 
 ### 3. Plan Phase
 
 Spawn a **fresh** planner via `subagent_type: "flow-planner"` with `model: "opus"`. Prompt includes, in this order:
-- **First line (verbatim):** `` `First action: invoke Skill(skill: "serena:activate").` ``
+- The canonical serena-activate first line (see §Serena Activation)
 - `mode: plan`
 - Reference to the brief at `.flow-spec/feature-brief.md`
 - Any user-confirmed decisions from the brief phase
@@ -127,12 +123,14 @@ For each phase, in order:
 ```
 Agent(subagent_type: "flow-implementer", model: "sonnet", team_name: <team>)
   Prompt includes, in this order:
-  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
+  - The canonical serena-activate first line (see §Serena Activation)
   - phase-N (the phase number to implement)
   - One-line phase summary from the plan
   - Reference to .flow-spec/feature-plan.md
 ```
 The agent definition handles `/flow:implement phase-N` and the exit-gate checklist (build/type-check/lint/test commands from `.flow-spec/project.md`).
+
+**If the implementer reports a plan gap** (a `"Gap found in plan: …"` `SendMessage`), relay it via `AskUserQuestion` with these three standard options: (a) **amend plan** — have the lead edit `.flow-spec/feature-plan.md` with the user's guidance before resuming; (b) **skip and document as Known Delta** — record the divergence in the brief and continue; (c) **stop and re-plan** — shut down the implementer and spawn a fresh planner in `mode: plan`. Include the implementer's message verbatim as context.
 
 **When implementer reports done:**
 - Do NOT shut down the implementer yet
@@ -143,7 +141,7 @@ The agent definition handles `/flow:implement phase-N` and the exit-gate checkli
 ```
 Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>)
   Prompt includes, in this order:
-  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
+  - The canonical serena-activate first line (see §Serena Activation)
   - phase-N (the phase number to review)
   - One-line summary of what was implemented
 ```
@@ -160,7 +158,7 @@ After all phases pass review:
 ```
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>)
   Prompt, in this order:
-  - First line (verbatim): First action: invoke Skill(skill: "serena:activate").
+  - The canonical serena-activate first line (see §Serena Activation)
   - Feature name
   - Reminder that check-result.md must be persisted
 ```
@@ -176,9 +174,11 @@ The agent definition handles `/flow:check`, re-running the gates from `.flow-spe
 ## Communication Rules
 
 1. **You are the relay.** Agents never talk directly to each other or the user. Everything goes through you.
-2. **Relay planner questions verbatim.** Don't answer on the user's behalf.
-3. **Summarize review findings.** When relaying review issues to the implementer, include file paths, line numbers, and specific fix instructions.
-4. **Keep the user informed.** Show a status table after each phase transition:
+2. **`AskUserQuestion` is the required tool for user-facing questions.** Any time an agent forwards a question via `SendMessage` to `team-lead` and the user must decide, relay it via `AskUserQuestion` — not plain text. Synthesize 2–4 mutually exclusive options from the agent's message: if the agent already offered a shortlist, mirror it verbatim; otherwise propose the most likely answers and let the auto-provided "Other" handle open-ended responses. Each option needs both a `label` and a one-line `description` — if the agent forwarded bare labels, synthesize a short description for each before calling, or the schema will reject the call. Use `multiSelect: true` only when choices genuinely compose (e.g., which optional features to enable). Give each question a short `header` (≤12 chars). Batch up to 4 related questions in one call rather than asking sequentially.
+   - **Escape hatch.** Plain-text relay is allowed only when the agent's message is a pure status update (no decision required) or a genuinely free-form request where 2–4 options would be misleading (e.g., "paste the API schema you want to conform to"). If in doubt, prefer `AskUserQuestion` — "Other" always exists.
+3. **Relay planner questions verbatim — never answer on the user's behalf.** If you'd need to answer yourself because you can't frame options, that's a signal the question is under-specified — ask the agent to clarify (via `SendMessage`) rather than guessing for the user.
+4. **Summarize review findings.** When relaying review issues to the implementer, include file paths, line numbers, and specific fix instructions.
+5. **Keep the user informed.** Show a status table after each phase transition:
 
 ```
 | Phase | Implementation | Review |
@@ -215,10 +215,10 @@ Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>, prompt
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>, prompt: ...)
 ```
 
-The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts supply per-call context (feature request, mode, phase number, user-locked decisions) **and the canonical first-line instruction** (`` `First action: invoke Skill(skill: "serena:activate").` ``) — the team lead owns activation because explicit prompt instructions are more reliable than self-directed ones from an agent definition.
+The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts supply per-call context (feature request, mode, phase number, user-locked decisions) **and the canonical serena-activate first line** (see §Serena Activation) — the team lead owns activation because explicit prompt instructions are more reliable than self-directed ones from an agent definition.
 
 ## Error Recovery
 
 - If an agent fails or gets stuck, shut it down and spawn a fresh one with more context about the issue.
-- If a review keeps failing after 3 rounds of fixes, escalate to the user — something fundamental may need rethinking.
+- If a review keeps failing after 3 rounds of fixes, escalate via `AskUserQuestion` with options: (a) retry with more context from the reviewer, (b) re-plan this phase (fresh planner, `mode: plan`, narrowed to the failing scope), (c) abandon this phase and re-scope the feature. Present the reviewer's latest issue list verbatim alongside the question.
 - If a skill (/flow:new, /flow:plan, etc.) is not available in the project, inform the user — the flow skills are prerequisites for this workflow.
