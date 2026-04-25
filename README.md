@@ -4,7 +4,7 @@ A Claude Code marketplace containing three plugins:
 
 - **`flow`** — multi-agent feature workflow. Skills: `flow:new`, `flow:plan`, `flow:implement`, `flow:review`, `flow:check`, `flow:compact`.
 - **`serena`** — Serena MCP helpers. Skills: `serena:activate`, `serena:onboarding`, `serena:update`. (Requires the [Serena MCP server](https://github.com/oraios/serena) to be installed separately.)
-- **`teams`** — multi-agent team orchestration. Skill: `teams:flow`. Requires the `flow` and `serena` plugins and an experimental Claude Code setting (see [Teams](#teams)).
+- **`teams`** — multi-agent team orchestration. Skills: `teams:init`, `teams:flow`. Requires the `flow` and `serena` plugins and an experimental Claude Code setting (see [Teams](#teams)).
 
 ## Install
 
@@ -166,7 +166,24 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 
 ## Teams
 
-`teams:flow` spins up a 4-agent team (Planner on Opus, Implementer + Reviewer on Sonnet, Checker on Opus) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
+The `teams` plugin ships two skills:
+
+- **`teams:init`** — one-shot project setup. Detects language, build/lint/test commands, and `CLAUDE.md` conventions, then writes per-role rule files under `.claude/rules/teams-flow/` that the four flow-* agents load at spawn time. Optional but recommended — without it the agents fall back to generic rules. Safe to re-run (idempotent: refreshes the auto-imported block, preserves your edits).
+- **`teams:flow`** — spins up a 4-agent team (Planner on Opus, Implementer + Reviewer on Sonnet, Checker on Opus) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
+
+### Setup
+
+```
+/teams:init   (or: "set up teams flow", "configure teams:flow for this project")
+      ↓ detects manifests → bootstraps .flow-spec/project.md (if missing)
+      ↓ scans CLAUDE.md, CI, lint configs, test layout
+      ↓ batched interview for what couldn't be detected (severity bar, public API, …)
+      ↓ writes .claude/rules/teams-flow/{_shared,planner,implementer,reviewer,checker,README}.md
+```
+
+Each rule line is tagged `[must-fix]` or `[should-fix]`. The severity bar (set at init time) controls which tag blocks the reviewer/checker. Files commit-friendly — share team rules with your collaborators.
+
+### Workflow
 
 ```
 /teams:flow   (or: "spin up a team", "use the flow team")
