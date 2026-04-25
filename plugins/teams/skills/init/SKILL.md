@@ -17,7 +17,16 @@ You do **two** things, in order:
 
 You never edit application source code. You never edit `CLAUDE.md` (only read it).
 
----
+## Assets
+
+This skill ships templates and reference data alongside `SKILL.md`. Read them with `Read` at runtime:
+
+- `assets/rules-templates/_shared.md` — shared rules template.
+- `assets/rules-templates/planner.md` · `implementer.md` · `reviewer.md` · `checker.md` — per-role rules templates.
+- `assets/rules-templates/README.md` — user-facing README that gets copied verbatim to `.claude/rules/teams-flow/README.md`.
+- `assets/escape-hatches-by-language.md` — language-keyed escape-hatch lists for the reviewer template.
+
+Templates use `{{PLACEHOLDER}}` markers; substitute them as described in **Step 4** below.
 
 ## Output
 
@@ -27,9 +36,9 @@ You never edit application source code. You never edit `CLAUDE.md` (only read it
 - `.claude/rules/teams-flow/implementer.md`
 - `.claude/rules/teams-flow/reviewer.md`
 - `.claude/rules/teams-flow/checker.md`
-- `.claude/rules/teams-flow/README.md` — one-paragraph guide for the user explaining edits and re-runs.
+- `.claude/rules/teams-flow/README.md`
 
-Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each file is regenerated; everything below is preserved.
+Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each rule file is regenerated; everything below is preserved.
 
 ---
 
@@ -103,36 +112,33 @@ Do not ask anything that the scan or `project.md` already answers.
 
 ### Step 4 — Write the rule files
 
-Create `.claude/rules/teams-flow/` if it does not exist. Then write the five files using the templates in **§ Rule-file templates** below. For each file:
+Create `.claude/rules/teams-flow/` if it does not exist. For each of the five rule files:
 
-1. Generate the body from the templates, filling placeholders with values from the scan and interview.
-2. **If a previous version of the file exists**, perform a diff-merge:
-   - Replace the `# imported from CLAUDE.md` block (delimited by `# imported from CLAUDE.md` … `# end imported`) with the freshly regenerated block.
-   - Preserve everything outside that block verbatim — these are user edits.
-3. Write the file.
+1. **Read** the matching template from `assets/rules-templates/<role>.md` (or `_shared.md`).
+2. **Substitute** `{{PLACEHOLDER}}` markers from the scan + interview:
 
-Each rule line is tagged `[must-fix]` or `[should-fix]`. The severity bar from Step 3 controls which tag blocks the reviewer/checker.
+   | Placeholder | Source |
+   |---|---|
+   | `{{SEVERITY_BAR}}` | `"warns"` or `"blocks"` from Step 3 (default `"warns"`) |
+   | `{{FORBIDDEN_ZONES}}` | list from `CLAUDE.md §Forbidden Zones`, or `"none declared"` |
+   | `{{DEP_POLICY}}` | list from `CLAUDE.md §Dependencies`, or `"none declared"` |
+   | `{{NAMING}}` | rules from `CLAUDE.md §Naming` (or similar), or `"none declared"` |
+   | `{{ERROR_PATTERN}}` | quote from `CLAUDE.md §Errors` (or similar), or `"none declared"` |
+   | `{{LANGUAGE}}` | `language` field from `.flow-spec/project.md` |
+   | `{{TEST_ROOTS}}` | comma-separated test-root paths from Step 2 |
+   | `{{PUBLIC_API_ENTRY_POINTS}}` | list from Step 2, or `"n/a"` |
+   | `{{CLAUDE_SECTIONS}}` | comma-separated `§<section>` anchors of the rules cited (e.g. `§Forbidden Zones, §Naming`); render `(none)` if no sections were cited |
+   | `{{ESCAPE_HATCH_LIST}}` | render the language's section from `assets/escape-hatches-by-language.md` as a sub-bulleted list. If `static_typing: no`, render the entire `must-fix` line about escape hatches (and this sub-bullet) as `(skipped — static_typing: no)` per that file's instruction. |
+   | `{{SRC_ROOT}}` | primary source root (e.g. `src/`, `lib/`, `app/`); fall back to `"the project's source root"` if unclear |
+   | `{{TEST_ROOT}}` | primary test root (e.g. `tests/`, `__tests__/`); fall back to `"the project's test root"` if unclear |
 
-### Step 5 — Write `.claude/rules/teams-flow/README.md`
+3. **Diff-merge if the file already exists at the destination:** replace only the `# imported from CLAUDE.md` … `# end imported` block (and the `Severity bar:` line in `_shared.md` if present) with the freshly rendered content. Preserve everything else verbatim — those are user edits.
 
-Short user-facing guide:
+4. **Write** the rendered file to `.claude/rules/teams-flow/<role>.md`.
 
-```markdown
-# .claude/rules/teams-flow/
+### Step 5 — Copy the user-facing README
 
-These files are loaded by the four flow-* agents (planner / implementer / reviewer / checker) at spawn time during `/teams:flow`. Each agent reads `_shared.md` plus its own role file.
-
-## Editing
-- Rules tagged `[must-fix]` block the reviewer/checker; `[should-fix]` warns (per the severity bar in `_shared.md`).
-- The `# imported from CLAUDE.md` … `# end imported` block at the top of each file is **auto-regenerated** by `/teams:init`. To change those rules, edit `CLAUDE.md` and re-run `/teams:init`.
-- Anything **outside** the imported block is preserved across re-runs. Edit freely.
-
-## Re-running `/teams:init`
-Safe and idempotent. Re-detects manifests, refreshes the imported block, preserves your edits.
-
-## Removing
-Delete the directory to opt out — the agents fall back to their built-in defaults.
-```
+Read `assets/rules-templates/README.md` and copy it verbatim (no substitution) to `.claude/rules/teams-flow/README.md`. If the destination already exists, leave it alone — the user may have customised it.
 
 ### Step 6 — Gitignore guidance
 
@@ -148,144 +154,10 @@ Tell the user what was written, where, and the next step:
 
 ---
 
-## Rule-file templates
-
-All files use the same `# imported from CLAUDE.md` … `# end imported` block convention so re-runs are diff-merge safe.
-
-### `_shared.md`
-
-```markdown
-# Team Flow — shared rules
-_Generated by `/teams:init`. Edit freely below the imported block; re-running `/teams:init` preserves your edits._
-
-Severity bar: must-fix blocks · should-fix [warns | blocks]   ← set at init
-
-# imported from CLAUDE.md (auto-regenerated by /teams:init — edit CLAUDE.md, not this block)
-- [must-fix] Forbidden zones: <list from CLAUDE.md §Forbidden Zones, or "none declared">
-- [must-fix] Dependency policy: <list from CLAUDE.md §Dependencies, or "none declared">
-- [must-fix] Naming conventions: <list from CLAUDE.md §Naming, or "none declared">
-- [must-fix] Error-handling pattern: <quote from CLAUDE.md §Errors, or "none declared">
-# end imported
-
-## Team-wide
-- [must-fix] No new dependencies without an explicit plan step or user approval.
-- [must-fix] No silencing of lint or type-check rules to make exit gates pass.
-- [must-fix] All design choices must cite the brief, the plan, or `CLAUDE.md` when challenged.
-- [should-fix] Prefer Serena symbol tools (`find_symbol`, `replace_symbol_body`, …) over `Read`/`Grep`/`Edit` when changing whole symbols.
-
-## Project context
-- Language: <from project.md>
-- Test roots: <from scan>
-- Public-API entry points: <from scan or interview, or "n/a">
-```
-
-### `planner.md`
-
-```markdown
-# Team Flow — planner rules
-_Loaded by `flow-planner` after Serena activation. Edit freely below the imported block._
-
-# imported from CLAUDE.md (auto-regenerated by /teams:init)
-- [must-fix] Honor architectural constraints from CLAUDE.md §<sections>.
-# end imported
-
-## Plan-phase rules
-- [must-fix] Every phase has at least one falsifiable exit criterion drawn from `project.md` commands or a concrete grep — no "looks correct" criteria.
-- [must-fix] Signatures-first: types, contracts, and public APIs are defined before bodies.
-- [must-fix] No "TODO add tests later" phases — tests are a phase or a step inside one, not a deferred checkbox.
-- [must-fix] If the brief locks a decision, do not re-ask; record it as resolved.
-- [should-fix] For unfamiliar libraries, list the doc/source consulted in the plan's notes.
-- [should-fix] Phases ≤ ~150 lines of expected delta where feasible. Larger phases need a one-line justification.
-```
-
-### `implementer.md`
-
-```markdown
-# Team Flow — implementer rules
-_Loaded by `flow-implementer` after Serena activation. Edit freely below the imported block._
-
-# imported from CLAUDE.md (auto-regenerated by /teams:init)
-- [must-fix] Honor coding conventions from CLAUDE.md §<sections>.
-- [must-fix] Forbidden zones: <list> — do not edit files in these paths.
-# end imported
-
-## Implementation-phase rules
-- [must-fix] Every type-system escape hatch (e.g. `any`/`unknown`/`as any` in TS, `interface{}`/`any` in Go, `dynamic` in Dart/C#, `Any` in Python, `unsafe` in Rust, `!`/`unwrap`/`expect` in Rust/Swift, untyped dicts) requires a one-line written reason in `phase-N-result.md`. No reason = the reviewer will reject.
-- [must-fix] No `TODO`/`FIXME`/`XXX` comments in shipped code unless the plan names them explicitly.
-- [must-fix] If the plan needs a new dependency, stop and ask via `SendMessage` to `team-lead` — never add silently.
-- [must-fix] Run all four exit-gate commands from `project.md` verbatim before reporting done; never silence rules to pass.
-- [must-fix] Honor forbidden zones from `_shared.md` and the imported block above.
-- [should-fix] Re-use existing utilities; if you introduce duplication, flag it in `phase-N-result.md`.
-- [should-fix] Prefer Serena's symbolic editing tools for whole-symbol changes.
-```
-
-### `reviewer.md`
-
-```markdown
-# Team Flow — reviewer rules
-_Loaded by `flow-reviewer` after Serena activation. Edit freely below the imported block._
-
-# imported from CLAUDE.md (auto-regenerated by /teams:init)
-- [must-fix] Enforce coding conventions from CLAUDE.md §<sections>.
-# end imported
-
-## Review-phase rules
-- [must-fix] Re-run the four exit-gate commands from `project.md` yourself; do not trust the implementer's claims without re-checking.
-- [must-fix] Demand a one-line written reason in `phase-N-result.md` for every escape hatch. No reason = `must-fix` issue.
-  - Escape-hatch list for this project (from `project.md` language `<lang>`): <generated list — see § Escape-hatch lists by language>
-- [must-fix] Reject phases where the test count decreased without an explicit Known Delta in the brief.
-- [must-fix] Verify dead-code removal across `<src_root>` and `<test_root>` (paths from scan); a stale symbol is a `must-fix`.
-- [must-fix] Honor forbidden zones — flag any change inside one as `must-fix` regardless of intent.
-- [should-fix] Do not rubber-stamp PASSED. At least one falsifiable check must be executed beyond re-running gates.
-- [should-fix] If a pattern looks wrong but is consistent with the rest of the codebase, flag as `should-fix`, not `must-fix`.
-```
-
-### `checker.md`
-
-```markdown
-# Team Flow — checker rules
-_Loaded by `flow-checker` after Serena activation. Edit freely below the imported block._
-
-# imported from CLAUDE.md (auto-regenerated by /teams:init)
-- [must-fix] Verify compliance with CLAUDE.md §<sections> across the full feature.
-# end imported
-
-## Final-check rules
-- [must-fix] Re-run the four exit-gate commands on a clean working tree. If uncommitted unrelated changes exist, list them in `check-result.md` and set `Status: HAS_ISSUES`.
-- [must-fix] Aggregate metrics in `check-result.md` (line delta, test count) must equal the sum across `phase-*-result.md`. Discrepancies are `must-fix`.
-- [must-fix] Verify rule compliance: confirm `.claude/rules/teams-flow/*` rules were applied across phases. Missing application = `HAS_ISSUES`.
-- [must-fix] Confirm forbidden zones were not touched anywhere across the diff.
-- [should-fix] If `phase-*-result.md` files are missing, reconstruct them from review reports + `git diff` before declaring `Status: DONE`.
-```
-
----
-
-## Escape-hatch lists by language
-
-The reviewer template above is filled with the language-specific list at write time:
-
-- **TypeScript**: `any`, `unknown` (when narrower would do), `as any`, `// @ts-ignore`, `// @ts-expect-error` without an issue link, non-null `!`.
-- **JavaScript**: untyped function parameters where JSDoc is available, `eval`, `Function(…)` constructor.
-- **Python**: `typing.Any`, `cast(Any, …)`, `# type: ignore` without a reason, untyped `**kwargs` on public APIs.
-- **Rust**: `unsafe`, `unwrap()`, `expect("…")` outside test/init code, `Box<dyn Any>`.
-- **Go**: `interface{}` / `any`, `panic` outside `init` / fatal paths, type assertions without the `, ok` form.
-- **Java/Kotlin**: raw types, `Object` parameters, `!!` (Kotlin), `@Suppress("UNCHECKED_CAST")` without a reason.
-- **C#**: `dynamic`, `object` parameters, `#pragma warning disable` without a reason.
-- **Swift**: `Any`, force-unwrap `!`, `try!`, `as!`.
-- **Ruby**: untyped `Sorbet` `T.untyped`, `rescue` without a class.
-- **PHP**: `mixed` (PHP 8+) on public APIs, `@phpstan-ignore-next-line` without a reason.
-- **Dart**: `dynamic`, `late` without justification, force-unwrap `!`.
-- **Elixir**: `Code.eval_string`, `apply/3` with untyped module references on hot paths.
-- **Plain shell / unknown**: skip this section (no static typing).
-
-If `static_typing: no` in `project.md`, render the section as `(skipped — static_typing: no)`.
-
----
-
 ## Hard rules
 
 - **You write only inside `.flow-spec/` (only `project.md`) and `.claude/rules/teams-flow/`.** Never edit application source code. Never edit `CLAUDE.md`.
-- **Idempotent.** Re-runs must preserve user edits outside the imported block. Verify by reading any existing file before writing.
+- **Idempotent.** Re-runs must preserve user edits outside the imported block. Verify by reading any existing destination file before writing.
 - **No agent spawning.** This skill runs in the user's main chat; it never spawns flow-* agents and therefore never trips the PreToolUse guardrail.
 - **No dependency on Serena.** This is a setup skill; it should work even before `/serena:onboarding` has been run. If Serena is available, prefer its symbol tools for the scan; otherwise fall back to `Read` / `Grep` / `Glob`.
 - **Soft preconditions.** If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is not set, warn the user (so `/teams:flow` will work later) but proceed — the rule files are useful regardless.

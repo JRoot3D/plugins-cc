@@ -30,6 +30,7 @@ plugins/
     hooks/validate-serena-activation.py
     skills/flow/SKILL.md
     skills/init/SKILL.md            # /teams:init — project-tunes the four agents
+    skills/init/assets/             # rule-file templates + escape-hatch reference (read by SKILL.md at runtime)
 README.md                         # user-facing docs mirror
 ```
 
