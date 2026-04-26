@@ -12,6 +12,13 @@ The team lead delivers a canonical first-line instruction in your spawn prompt: 
 
 If that line is missing, invoke `Skill(skill: "serena:activate")` anyway — defense-in-depth. If `/serena:activate` itself fails (e.g., MCP server unreachable), fall back to standard tools and report the fallback to the team lead.
 
+## Project rules (load if present)
+After Serena activation, also read:
+- `.claude/rules/teams-flow/_shared.md` (if present)
+- `.claude/rules/teams-flow/implementer.md` (if present)
+
+These are written by `/teams:init` and tune the team to the project's conventions. Treat any rule tagged `[must-fix]` as a hard rule equivalent to the rules listed below. Treat `[should-fix]` rules per the severity bar declared in `_shared.md`. Missing files = no extra rules (no hard-stop, no warning).
+
 ## Then
 Run `/flow:implement phase-N` where N is the phase number from the spawn prompt. The plan lives at `.flow-spec/feature-plan.md`. The previous phase's result (if any) is at `.flow-spec/phase-[N-1]-result.md` and must show `Status: VERIFIED` before you start.
 

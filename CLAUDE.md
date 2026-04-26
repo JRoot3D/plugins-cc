@@ -10,7 +10,7 @@ The marketplace is declared in `.claude-plugin/marketplace.json` and currently s
 
 - **`flow`** — a six-step feature workflow (`new` → `plan` → `implement` → `review` → `check` → `compact`).
 - **`serena`** — three helpers around the external Serena MCP server (`activate`, `onboarding`, `update`). The MCP server itself is **not** in this repo; these skills assume it is installed separately.
-- **`teams`** — a single skill (`teams:flow`) that orchestrates a 4-agent team (Planner/Implementer/Reviewer/Checker) running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning. Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
+- **`teams`** — two skills: `teams:init` (one-shot project setup that writes per-role rule files under `.claude/rules/teams-flow/`) and `teams:flow` (orchestrates a 4-agent team — Planner/Implementer/Reviewer/Checker — running the `/flow:*` pipeline via `TeamCreate` + `Agent` spawning). Depends on `flow` and `serena` being installed, and requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in Claude Code settings.
 
 ## Repo layout
 
@@ -29,6 +29,8 @@ plugins/
     hooks/hooks.json                # PreToolUse guardrail for Agent spawns
     hooks/validate-serena-activation.py
     skills/flow/SKILL.md
+    skills/init/SKILL.md            # /teams:init — project-tunes the four agents
+    skills/init/assets/             # rule-file templates + escape-hatch reference (read by SKILL.md at runtime)
 README.md                         # user-facing docs mirror
 ```
 
@@ -83,9 +85,24 @@ compact    ──reads──▶  everything above (+ optional feature-docs.md)
 
 - The **template lives in `plugins/flow/skills/review/SKILL.md`**.
 - It is **consumed by** `implement/SKILL.md` and `review/SKILL.md` (both hard-stop if it's missing).
-- It is **bootstrapped by** `new/SKILL.md`, which auto-detects language from manifest files (`package.json`, `pyproject.toml`, `Cargo.toml`, …) and drafts the file with `# unverified` markers for the user to confirm.
+- It is **bootstrapped by** `new/SKILL.md` (during `/flow:new`) **and by** `plugins/teams/skills/init/SKILL.md` (during `/teams:init`). Both auto-detect language from manifest files (`package.json`, `pyproject.toml`, `Cargo.toml`, …) and draft the file with `# unverified` markers for the user to confirm. Each references the template in `review/SKILL.md` rather than inlining it.
 
-**If you change the template in `review/SKILL.md`, also update the detection logic and the drafted fields in `new/SKILL.md`.** There's no compile-time check for this — only grep.
+**If you change the template in `review/SKILL.md`, also update the manifest-detection rules and the drafted field defaults in BOTH `new/SKILL.md` AND `plugins/teams/skills/init/SKILL.md`.** Two skills now duplicate the detection logic — there's no compile-time check, only grep.
+
+## The `.claude/rules/teams-flow/` cross-skill contract
+
+`.claude/rules/teams-flow/` is a per-project directory (in the *user's* project, not this repo) containing five rule files that the four flow-* agents load at spawn time during `/teams:flow`:
+
+- `_shared.md` — read by all four agents.
+- `planner.md`, `implementer.md`, `reviewer.md`, `checker.md` — read by the matching agent.
+
+Each file is **written by `plugins/teams/skills/init/SKILL.md`** (`/teams:init`) and **read by** `plugins/teams/agents/flow-{planner,implementer,reviewer,checker}.md`. Each agent's "Project rules (load if present)" section (immediately after Serena activation) loads `_shared.md` plus its own role file. Missing files = no extra rules; the agents fall back to their built-in defaults — no hard-stop.
+
+**The import-block convention:** each rule file opens with a `# imported from CLAUDE.md` … `# end imported` block that `/teams:init` regenerates from the user's `CLAUDE.md` on every run. Everything outside that block is preserved (user edits survive re-runs). This keeps `CLAUDE.md` as the normative source for project conventions; the rule files are operational checklists derived from it.
+
+**Severity tags** (`[must-fix]` / `[should-fix]`) gate reviewer/checker behaviour. The bar is set at init time and stored in `_shared.md`.
+
+**If you change rule wording in `init/SKILL.md`'s templates, also re-read the four agent files** — agents quote the `[must-fix]`/`[should-fix]` tag semantics; keep wording consistent.
 
 ## Installing/testing changes locally
 
@@ -104,3 +121,4 @@ Then run the skill in a project directory (e.g., `/flow:plan`, `/serena:activate
 - **`serena` skills require the Serena MCP server** to actually run. The skills themselves are pure markdown; they invoke MCP tools like `activate_project`, `check_onboarding_performed`, `list_memories`, `read_memory`. When reading these, assume those tools exist at runtime; don't inline their implementations.
 - **`serena:onboarding` refuses to run if `CLAUDE.md` is missing in the target project** (the user's project, not this repo). This is intentional — don't weaken the check.
 - **README and skills duplicate content.** The skill routing table in `README.md` and the `description:` fields in each `SKILL.md` must stay in sync. When adding a trigger phrase, update both.
+- **`/teams:init` re-runs are diff-merge.** Re-running the skill regenerates only the `# imported from CLAUDE.md` … `# end imported` block at the top of each rule file under `.claude/rules/teams-flow/`. User edits below that block are preserved verbatim. Don't change this contract without auditing the skill's idempotency promise — users will edit these files.
