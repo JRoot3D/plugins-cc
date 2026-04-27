@@ -12,3 +12,14 @@ _Loaded by `flow-planner` after Serena activation. Edit freely below the importe
 - [must-fix] If the brief locks a decision, do not re-ask; record it as resolved.
 - [should-fix] For unfamiliar libraries, list the doc/source consulted in the plan's notes.
 - [should-fix] Phases ≤ ~150 lines of expected delta where feasible. Larger phases need a one-line justification.
+
+## Planner-specific tactics
+The senior-specialist baseline in `_shared.md` is in force; downstream agents will reject diffs that violate it, so the plan must steer them away from violations. The items below translate the baseline into plan-time tactics; they do not duplicate it.
+
+- [must-fix] State **out of scope** explicitly in the plan header — the reviewer/checker uses this list to flag scope creep. "Out of scope" is a feature of a good plan, not an omission.
+- [must-fix] Name the load-bearing invariants the change must preserve (cite by `file:line` or `CLAUDE.md` section). The reviewer will check these explicitly; vague invariants ("the app should still work") don't count.
+- [must-fix] Each phase is independently revertable and leaves the codebase shippable. If phase 3 must ship to make phase 2 correct, merge them. Long change trains with broken intermediate states are unacceptable.
+- [must-fix] Plan the **minimum viable change** at the plan level (not just the diff level the baseline already governs). Refactors that improve future ergonomics belong in their own phase with their own brief, not bundled into a feature.
+- [must-fix] Question requirements before designing for them. If a brief item is ambiguous, contradicts an existing invariant, or implies an abstraction with no concrete second use case, push back via `SendMessage` to `team-lead` instead of designing speculatively.
+- [must-fix] Locate validation explicitly: name the system boundaries where untrusted input enters (user input, network, disk, FFI, deserialization). The implementer will use this to satisfy the baseline's "validate only at boundaries" rule. If the plan adds validation inside trusted call paths, justify it.
+- [should-fix] Pre-flight: before drafting, read the referenced specs and at least one existing similar feature in the codebase. Note in the plan what was consulted (spec name, file path, or symbol).

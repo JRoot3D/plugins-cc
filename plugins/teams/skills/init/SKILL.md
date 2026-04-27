@@ -40,6 +40,8 @@ Templates use `{{PLACEHOLDER}}` markers; substitute them as described in **Step 
 
 Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each rule file is regenerated; everything below is preserved.
 
+**Caveat — template content updates do not auto-propagate.** Because diff-merge only touches the imported block, changes to the body of the templates in `assets/rules-templates/` (new senior-baseline rules, reworded items, etc.) only reach **new** installs. Existing rule files keep their previous body. If the user pulls a plugin update and asks why their rules look unchanged, tell them: *"Re-runs preserve everything outside the imported block, including stale template content. To pull the latest baseline, delete the affected file in `.claude/rules/teams-flow/` and re-run `/teams:init`. Custom edits below the imported block will be lost — copy them aside first."*
+
 ---
 
 ## Process

@@ -14,3 +14,11 @@ _Loaded by `flow-implementer` after Serena activation. Edit freely below the imp
 - [must-fix] Honor forbidden zones from `_shared.md` and the imported block above.
 - [should-fix] Re-use existing utilities; if you introduce duplication, flag it in `phase-N-result.md`.
 - [should-fix] Prefer Serena's symbolic editing tools for whole-symbol changes.
+
+## Implementer-specific tactics
+The senior-specialist baseline in `_shared.md` is in force. The items below are implementer-specific reinforcements; they do not duplicate the baseline.
+
+- [must-fix] When the analyzer or a test fails, fix the **code**, not the test, not the config, not the rule. If the root cause is non-obvious, document it in `phase-N-result.md` so the reviewer can verify the fix matches the cause.
+- [must-fix] Out-of-scope discoveries go in `phase-N-result.md` under "Out-of-scope follow-ups", never into the diff. The shared baseline forbids "while I was here" changes; this rule names the place to record them.
+- [must-fix] Do not catch-and-re-throw exceptions you cannot meaningfully handle — let them propagate. Empty `catch` blocks, `except: pass`, and `_ = err` swallowing are violations of the no-half-finished-implementations baseline.
+- [should-fix] Smallest readable change: prefer editing the existing function over copy-and-modify. Prefer an inline fix over a new helper unless the helper has a second caller in the same diff.

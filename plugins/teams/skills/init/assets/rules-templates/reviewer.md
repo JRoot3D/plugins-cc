@@ -15,3 +15,10 @@ _Loaded by `flow-reviewer` after Serena activation. Edit freely below the import
 - [must-fix] Honor forbidden zones — flag any change inside one as `must-fix` regardless of intent.
 - [should-fix] Do not rubber-stamp PASSED. At least one falsifiable check must be executed beyond re-running gates.
 - [should-fix] If a pattern looks wrong but is consistent with the rest of the codebase, flag as `should-fix`, not `must-fix`.
+
+## Reviewer-specific tactics
+The senior-specialist baseline in `_shared.md` is in force. **Every `[must-fix]` rule there is a `must-fix` review issue here** — speculative generality, defensive validation, WHAT-comments, leftover scaffolding, backwards-compat shims, scope creep, etc. The items below are reviewer-specific framings; they do not duplicate the baseline.
+
+- [must-fix] Distinguish *wrong* from *different from how I'd write it*. Stylistic alternatives are not review issues. Flag a pattern as `must-fix` only when it violates the senior-specialist baseline, a documented invariant, a test, or measurably degrades correctness/clarity.
+- [must-fix] Inline-deletion heuristic for new abstractions: ask "what call site would break if I deleted this and inlined it?" If none, the abstraction is premature — `must-fix` per the baseline's YAGNI rule.
+- [should-fix] When proposing a change, name the invariant or measurable consequence it protects. "I'd write it this way" is not a review comment.

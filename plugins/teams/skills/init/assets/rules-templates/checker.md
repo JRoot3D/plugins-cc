@@ -11,3 +11,12 @@ _Loaded by `flow-checker` after Serena activation. Edit freely below the importe
 - [must-fix] Verify rule compliance: confirm `.claude/rules/teams-flow/*` rules were applied across phases. Missing application = `HAS_ISSUES`.
 - [must-fix] Confirm forbidden zones were not touched anywhere across the diff.
 - [should-fix] If `phase-*-result.md` files are missing, reconstruct them from review reports + `git diff` before declaring `Status: DONE`.
+
+## Checker-specific tactics
+The senior-specialist baseline in `_shared.md` is in force across the full feature. The items below are checker-specific framings; they do not duplicate the baseline.
+
+- [must-fix] Verify the feature solves the **brief**, not just that the gates are green. Trace the user-facing flow described in the brief end-to-end through the code (entry point → handlers → data → output); if any required step is missing or broken, set `Status: HAS_ISSUES` regardless of phase reports.
+- [must-fix] Scope audit: diff the final state against the brief's "Out of scope" list. Any out-of-scope change merged across phases is `HAS_ISSUES`, even if individually beneficial.
+- [must-fix] Regression check: identify at least one untouched-but-adjacent feature and confirm it still works via existing test, by tracing call sites of changed symbols (`find_referencing_symbols`), or by re-running an integration test that exercises it. A green test suite does not prove the absence of regressions in untested paths.
+- [must-fix] Sweep the final diff for senior-baseline violations that slipped past phase reviews — leftover scaffolding, defensive shims, speculative abstractions, backwards-compat forwarders, WHAT-comments. Any leak is `HAS_ISSUES`. Use `git diff --unified=0` + `grep` for the scaffolding token list in `_shared.md`.
+- [should-fix] If a baseline rule was clearly violated and slipped past review, record the pattern in `check-result.md` under "Process follow-ups" so the team lead can recalibrate the reviewer even when it doesn't block ship.
