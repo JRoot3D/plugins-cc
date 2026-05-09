@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Multi-agent planning pipeline that turns a feature brief into a validated, phased implementation plan. Use when the user says "plan", "deep plan", "create plan", "plan feature", or /flow:plan.
+description: Multi-role planning pipeline (planner ↔ validator within one chat) that turns a feature brief into a validated, phased implementation plan. Use when the user says "plan", "create plan", "plan feature", or /flow:plan.
 ---
 
 # Skill: /flow:plan

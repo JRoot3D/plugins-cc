@@ -23,9 +23,9 @@ This skill requires:
 2. **`flow` plugin** from `plugins-cc` installed — the skill dispatches `/flow:new`, `/flow:plan`, `/flow:implement`, `/flow:review`, `/flow:check` to spawned agents.
 3. **`serena` plugin** from `plugins-cc` installed — the team lead instructs every spawned agent to run `/serena:activate` first for semantic code navigation. (Also requires the Serena MCP server to be installed. Agents fall back to standard tools if Serena is unavailable.)
 
-The four agent definitions (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`) ship with this plugin under `agents/` — no extra install needed. They own the role-specific instructions, tool allowlists, and exit-gate contracts; this skill orchestrates them.
+The four agent definitions (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`) live in the user's project under `.claude/agents/`. They are written there by `/teams:create` with project-specific rules injected inline. They own the role-specific instructions, tool allowlists, and exit-gate contracts; this skill orchestrates them.
 
-**Optional setup (recommended):** run `/teams:create` once per project before the first `/teams:flow` invocation. It detects the project's stack and conventions and writes per-role rule files under `.claude/rules/teams-flow/` that the four agents load at spawn time, giving them project-tuned guidance instead of generic defaults. Skipping it is fine — the agents fall back to their built-in rules.
+**Required setup:** run `/teams:create` once per project before the first `/teams:flow` invocation. It detects the project's stack and conventions and writes the four agent files to `.claude/agents/` with project-tuned rules embedded in each agent's system prompt. The preflight check below (Step 0) hard-stops if the agents are missing.
 
 ## The Four Agents
 
@@ -74,6 +74,17 @@ Every spawn prompt you write **must begin with the canonical first-line instruct
 **Hard guarantee — PreToolUse hook.** The `teams` plugin ships a `hooks/validate-serena-activation.py` PreToolUse hook that inspects every `Agent` tool call: if `subagent_type` is one of `flow-planner` / `flow-implementer` / `flow-reviewer` / `flow-checker` and the prompt's first non-empty line is not the canonical instruction verbatim, the call is blocked (exit 2) with a stderr message that tells you how to fix it. Non-flow `Agent` calls and non-`Agent` tools are ignored. This converts the activation contract from a prompt-only convention into a system-level guarantee: a flow-* subagent cannot start without the instruction in place. If the hook blocks a spawn, re-issue the same `Agent` call with the canonical line prepended — do not work around the block.
 
 ## Step-by-Step Orchestration
+
+### 0. Preflight — verify agent definitions are installed
+
+Before creating a team or spawning any agent, check that `.claude/agents/flow-planner.md` exists in the current project (use `Read` on that path; absence returns an error).
+
+- **Found** → proceed with Step 1.
+- **Not found** → **STOP.** Do not call `TeamCreate`. Tell the user verbatim:
+
+  > "The flow-* agent definitions are not installed in this project. Run `/teams:create` first — it writes the four agent files to `.claude/agents/` (flow-planner, flow-implementer, flow-reviewer, flow-checker) that `/teams:flow` depends on."
+
+  Then stop and wait for the user to act. Do not work around the check by spawning with a generic `subagent_type` — the four flow-* names only resolve to project-installed agents.
 
 ### 1. Receive Feature Request
 
@@ -217,7 +228,7 @@ Agent(subagent_type: "flow-reviewer", model: "sonnet", team_name: <team>, prompt
 Agent(subagent_type: "flow-checker", model: "opus", team_name: <team>, prompt: ...)
 ```
 
-The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `agents/`. Your prompts supply per-call context (feature request, mode, phase number, user-locked decisions) **and the canonical serena-activate first line** (see §Serena Activation) — the team lead owns activation because explicit prompt instructions are more reliable than self-directed ones from an agent definition.
+The role instructions, tool allowlists, exit-gate contracts, and output formats live in the agent definitions under `.claude/agents/` in the user's project (written there by `/teams:create`). Your prompts supply per-call context (feature request, mode, phase number, user-locked decisions) **and the canonical serena-activate first line** (see §Serena Activation) — the team lead owns activation because explicit prompt instructions are more reliable than self-directed ones from an agent definition.
 
 ## Error Recovery
 

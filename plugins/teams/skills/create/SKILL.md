@@ -1,6 +1,6 @@
 ---
 name: create
-description: One-shot setup for /teams:flow projects. Detects language, build/type-check/lint/test commands, and CLAUDE.md conventions, then writes per-role rule files under .claude/rules/teams-flow/ that the four flow-* agents load at spawn time. Use when the user says "set up teams flow", "create the team", "configure teams:flow for this project", "tune the team for this codebase", or runs /teams:create.
+description: One-shot setup for /teams:flow projects. Detects language, build/type-check/lint/test commands, and CLAUDE.md conventions, then writes four flow-* agent files to .claude/agents/ with project rules injected inline. Use when the user says "set up teams flow", "create the team", "configure teams:flow for this project", "tune the team for this codebase", or runs /teams:create.
 ---
 
 # Skill: /teams:create
@@ -8,39 +8,33 @@ description: One-shot setup for /teams:flow projects. Detects language, build/ty
 > **Recommended model: Opus**
 
 ## Role
-You are a **setup agent** for the `/teams:flow` workflow. Your job is to give the four flow-* agents project-tuned rules so they review and implement against the conventions of *this* codebase, not generic defaults.
+You are a **setup agent** for the `/teams:flow` workflow. Your job is to install the four flow-* agent files in the user's project under `.claude/agents/`, with project-specific rules injected inline so each agent reviews and implements against the conventions of *this* codebase, not generic defaults.
 
 You do **two** things, in order:
 
 1. **Bootstrap `.flow-spec/project.md`** if it does not already exist (so `/flow:implement`, `/flow:review`, `/flow:check` have the four exit-gate commands they require).
-2. **Write per-role rule files** under `.claude/rules/teams-flow/` that the four flow-* agents read at spawn time.
+2. **Write four agent files** to `.claude/agents/`, each containing project-specific rules injected inline into the agent's system prompt.
 
-You never edit application source code. You never edit `CLAUDE.md` (only read it).
+You never edit application source code. You never edit `CLAUDE.md` (only read it). You do not write any rule files outside the agent files — rules live inside each agent.
 
 ## Assets
 
 This skill ships templates and reference data alongside `SKILL.md`. Read them with `Read` at runtime:
 
-- `assets/rules-templates/_shared.md` — shared rules template.
-- `assets/rules-templates/planner.md` · `implementer.md` · `reviewer.md` · `checker.md` — per-role rules templates.
-- `assets/rules-templates/README.md` — user-facing README that gets copied verbatim to `.claude/rules/teams-flow/README.md`.
-- `assets/escape-hatches-by-language.md` — language-keyed escape-hatch lists for the reviewer template.
-
-Templates use `{{PLACEHOLDER}}` markers; substitute them as described in **Step 4** below.
+- `assets/agent-templates/flow-planner.md` · `flow-implementer.md` · `flow-reviewer.md` · `flow-checker.md` — agent templates with `{{PLACEHOLDER}}` markers inside a `<!-- project-rules: start --> ... <!-- project-rules: end -->` block. Written to `.claude/agents/` after substitution.
+- `assets/escape-hatches-by-language.md` — language-keyed escape-hatch lists used to fill `{{ESCAPE_HATCH_LIST}}` in the reviewer template.
 
 ## Output
 
 - `.flow-spec/project.md` — only if missing; otherwise left untouched (already managed by `/flow:new`).
-- `.claude/rules/teams-flow/_shared.md`
-- `.claude/rules/teams-flow/planner.md`
-- `.claude/rules/teams-flow/implementer.md`
-- `.claude/rules/teams-flow/reviewer.md`
-- `.claude/rules/teams-flow/checker.md`
-- `.claude/rules/teams-flow/README.md`
+- `.claude/agents/flow-planner.md`
+- `.claude/agents/flow-implementer.md`
+- `.claude/agents/flow-reviewer.md`
+- `.claude/agents/flow-checker.md`
 
-Re-running `/teams:create` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each rule file is regenerated; everything below is preserved.
+Re-running `/teams:create` is **idempotent and diff-merge safe**: only the content between `<!-- project-rules: start -->` and `<!-- project-rules: end -->` in each agent file is regenerated. Everything outside those markers (user customizations to tool lists, model, prompt wording, hard rules) is preserved verbatim.
 
-**Caveat — template content updates do not auto-propagate.** Because diff-merge only touches the imported block, changes to the body of the templates in `assets/rules-templates/` (new senior-baseline rules, reworded items, etc.) only reach **new** installs. Existing rule files keep their previous body. If the user pulls a plugin update and asks why their rules look unchanged, tell them: *"Re-runs preserve everything outside the imported block, including stale template content. To pull the latest baseline, delete the affected file in `.claude/rules/teams-flow/` and re-run `/teams:create`. Custom edits below the imported block will be lost — copy them aside first."*
+**Caveat — template content updates do not auto-propagate.** Because diff-merge only touches the project-rules block, changes to the body of an agent template (frontmatter, hard rules, output format, etc.) only reach **new** installs. Existing agent files keep their previous body. If the user pulls a plugin update and asks why their agent definitions look unchanged, tell them: *"Re-runs preserve everything outside the project-rules markers, including stale template content. To pull the latest baseline, delete the affected file in `.claude/agents/` and re-run `/teams:create`. Custom edits will be lost — copy them aside first."*
 
 ---
 
@@ -80,7 +74,7 @@ Re-running `/teams:create` is **idempotent and diff-merge safe**: the imported-f
 3. **Draft** — write `.flow-spec/project.md` using the template from `plugins/flow/skills/review/SKILL.md`. Mark every field you cannot confidently infer with ` # unverified — please confirm`.
 
 4. **Confirm** — show the draft and say:
-   > "I generated a draft `.flow-spec/project.md` from the manifest files I found. Please review the `# unverified` fields, correct them if needed, and confirm before I write the team rules."
+   > "I generated a draft `.flow-spec/project.md` from the manifest files I found. Please review the `# unverified` fields, correct them if needed, and confirm before I write the agent files."
 
    Wait for confirmation. If the user wants to edit manually, tell them:
    > "Draft saved. Edit `.flow-spec/project.md` and re-run `/teams:create` when ready."
@@ -88,7 +82,7 @@ Re-running `/teams:create` is **idempotent and diff-merge safe**: the imported-f
 
 ### Step 2 — Scan for additional cues
 
-Read (do not modify) for context to seed the rule files:
+Read (do not modify) for context to seed the project-rules block:
 
 - **`CLAUDE.md`** at the project root, plus any nested `CLAUDE.md` files. Extract:
   - forbidden zones / "don't touch" directives
@@ -112,12 +106,12 @@ Use a single `AskUserQuestion` call (not a chain) to fill genuine gaps. Skip any
 
 Do not ask anything that the scan or `project.md` already answers.
 
-### Step 4 — Write the rule files
+### Step 4 — Write the agent files
 
-Create `.claude/rules/teams-flow/` if it does not exist. For each of the five rule files:
+Create `.claude/agents/` if it does not exist. For each of the four agents (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`):
 
-1. **Read** the matching template from `assets/rules-templates/<role>.md` (or `_shared.md`).
-2. **Substitute** `{{PLACEHOLDER}}` markers from the scan + interview:
+1. **Read** the matching template from `assets/agent-templates/flow-<role>.md`.
+2. **Substitute** `{{PLACEHOLDER}}` markers using values from the scan + interview:
 
    | Placeholder | Source |
    |---|---|
@@ -130,36 +124,37 @@ Create `.claude/rules/teams-flow/` if it does not exist. For each of the five ru
    | `{{TEST_ROOTS}}` | comma-separated test-root paths from Step 2 |
    | `{{PUBLIC_API_ENTRY_POINTS}}` | list from Step 2, or `"n/a"` |
    | `{{CLAUDE_SECTIONS}}` | comma-separated `§<section>` anchors of the rules cited (e.g. `§Forbidden Zones, §Naming`); render `(none)` if no sections were cited |
-   | `{{ESCAPE_HATCH_LIST}}` | render the language's section from `assets/escape-hatches-by-language.md` as a sub-bulleted list. If `static_typing: no`, render the entire `must-fix` line about escape hatches (and this sub-bullet) as `(skipped — static_typing: no)` per that file's instruction. |
-   | `{{SRC_ROOT}}` | primary source root (e.g. `src/`, `lib/`, `app/`); fall back to `"the project's source root"` if unclear |
-   | `{{TEST_ROOT}}` | primary test root (e.g. `tests/`, `__tests__/`); fall back to `"the project's test root"` if unclear |
+   | `{{ESCAPE_HATCH_LIST}}` (reviewer and implementer) | render the language's section from `assets/escape-hatches-by-language.md` as a sub-bulleted list. If `static_typing: no`, render the entire `must-fix` line about escape hatches (and this sub-bullet) as `(skipped — static_typing: no)` per that file's instruction. Apply the same rendering to both agents. |
+   | `{{SRC_ROOT}}` (reviewer only) | primary source root (e.g. `src/`, `lib/`, `app/`); fall back to `"the project's source root"` if unclear |
+   | `{{TEST_ROOT}}` (reviewer only) | primary test root (e.g. `tests/`, `__tests__/`); fall back to `"the project's test root"` if unclear |
 
-3. **Diff-merge if the file already exists at the destination:** replace only the `# imported from CLAUDE.md` … `# end imported` block (and the `Severity bar:` line in `_shared.md` if present) with the freshly rendered content. Preserve everything else verbatim — those are user edits.
+3. **Diff-merge if `.claude/agents/flow-<role>.md` already exists at the destination:**
+   - Read the existing file.
+   - Locate the `<!-- project-rules: start -->` and `<!-- project-rules: end -->` markers in the existing file.
+   - Replace **only** the content between those markers with the freshly substituted block from the template.
+   - Preserve everything else verbatim — frontmatter, hard rules, output format, user edits.
+   - If the existing file is missing the markers (user removed them), tell the user *"`.claude/agents/flow-<role>.md` is missing the `<!-- project-rules: start/end -->` markers — cannot diff-merge. Delete the file and re-run `/teams:create` to regenerate."* and skip that file.
 
-4. **Write** the rendered file to `.claude/rules/teams-flow/<role>.md`.
+4. **Write** the rendered file to `.claude/agents/flow-<role>.md`.
 
-### Step 5 — Copy the user-facing README
-
-Read `assets/rules-templates/README.md` and copy it verbatim (no substitution) to `.claude/rules/teams-flow/README.md`. If the destination already exists, leave it alone — the user may have customised it.
-
-### Step 6 — Gitignore guidance
+### Step 5 — Gitignore guidance
 
 Check `.gitignore` for an entry that would exclude `.claude/`. If found, tell the user:
-> "Your `.gitignore` excludes `.claude/`. To commit team rules, add `!.claude/rules/` after that entry. Without it, your teammates won't get these rules."
+> "Your `.gitignore` excludes `.claude/`. To share agent definitions with your teammates, add this line after that entry: `!.claude/agents/`. Without it, teammates will need to run `/teams:create` themselves."
 
 Do not edit `.gitignore` automatically — let the user decide.
 
-### Step 7 — Final summary
+### Step 6 — Final summary
 
 Tell the user what was written, where, and the next step:
-> "Team rules written to `.claude/rules/teams-flow/`. Run `/teams:flow` to start a feature — the four agents will pick up these rules automatically. Edit any file there to tune severity or add project-specific rules."
+> "Team setup complete. Written to `.claude/agents/`: flow-planner.md, flow-implementer.md, flow-reviewer.md, flow-checker.md. Project conventions from `CLAUDE.md` are injected into each agent's `## Project Rules` section. To customize an agent's behavior, edit its file directly — re-running `/teams:create` only updates the project-rules block, not the rest. Run `/teams:flow` to start a feature."
 
 ---
 
 ## Hard rules
 
-- **You write only inside `.flow-spec/` (only `project.md`) and `.claude/rules/teams-flow/`.** Never edit application source code. Never edit `CLAUDE.md`.
-- **Idempotent.** Re-runs must preserve user edits outside the imported block. Verify by reading any existing destination file before writing.
+- **You write only inside `.flow-spec/` (only `project.md`) and `.claude/agents/` (only the four `flow-*.md` files).** Never edit application source code. Never edit `CLAUDE.md`.
+- **Idempotent.** Re-runs must preserve everything outside the project-rules markers. Verify by reading any existing destination file before writing.
 - **No agent spawning.** This skill runs in the user's main chat; it never spawns flow-* agents and therefore never trips the PreToolUse guardrail.
 - **No dependency on Serena.** This is a setup skill; it should work even before `/serena:onboarding` has been run. If Serena is available, prefer its symbol tools for the scan; otherwise fall back to `Read` / `Grep` / `Glob`.
-- **Soft preconditions.** If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is not set, warn the user (so `/teams:flow` will work later) but proceed — the rule files are useful regardless.
+- **Soft preconditions.** If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is not set, warn the user (so `/teams:flow` will work later) but proceed — the agent files are useful regardless.

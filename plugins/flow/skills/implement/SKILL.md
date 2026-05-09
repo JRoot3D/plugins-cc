@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Developer agent that implements one phase of the plan with built-in verification. Use when the user says "implement phase", "start implementation", or /flow:implement phase-N.
+description: Developer agent that implements one phase of the plan with built-in verification, plus a fix mode for addressing review/check issues. Use when the user says "implement phase", "start implementation", or /flow:implement phase-N. Also use for fix mode when the user says "fix issue", "apply fix", "implement fix", or /flow:implement fix "description".
 ---
 
 # Skill: /flow:implement

@@ -168,7 +168,7 @@ Serena MCP provides semantic, symbol-aware code navigation. These skills manage 
 
 The `teams` plugin ships two skills:
 
-- **`teams:create`** — one-shot project setup. Detects language, build/lint/test commands, and `CLAUDE.md` conventions, then writes per-role rule files under `.claude/rules/teams-flow/` that the four flow-* agents load at spawn time. Optional but recommended — without it the agents fall back to generic rules. Safe to re-run (idempotent: refreshes the auto-imported block, preserves your edits).
+- **`teams:create`** — one-shot project setup. Detects language, build/lint/test commands, and `CLAUDE.md` conventions, then writes the four flow-* agent files to `.claude/agents/` with project-specific rules injected inline into each agent's system prompt. **Required** before the first `/teams:flow` invocation — `/teams:flow` hard-stops if the agents are not installed. Safe to re-run (idempotent: refreshes only the project-rules block between sentinel markers; preserves your edits everywhere else).
 - **`teams:flow`** — spins up a 4-agent team (Planner on Opus, Implementer + Reviewer on Sonnet, Checker on Opus) that runs the full `/flow:*` pipeline with fresh-context spawning per step. The team lead (your main chat) relays questions and review findings between agents and the user; agents never talk directly.
 
 ### Setup
@@ -178,10 +178,11 @@ The `teams` plugin ships two skills:
       ↓ detects manifests → bootstraps .flow-spec/project.md (if missing)
       ↓ scans CLAUDE.md, CI, lint configs, test layout
       ↓ batched interview for what couldn't be detected (severity bar, public API, …)
-      ↓ writes .claude/rules/teams-flow/{_shared,planner,implementer,reviewer,checker,README}.md
+      ↓ writes .claude/agents/{flow-planner,flow-implementer,flow-reviewer,flow-checker}.md
+        with project rules injected between <!-- project-rules: start --> markers
 ```
 
-Each rule line is tagged `[must-fix]` or `[should-fix]`. The severity bar (set at init time) controls which tag blocks the reviewer/checker. Files commit-friendly — share team rules with your collaborators.
+Each rule line in the project-rules block is tagged `[must-fix]` or `[should-fix]`. The severity bar (set at init time) controls which tag blocks the reviewer/checker. Files commit-friendly — share agent definitions with your collaborators by adding `!.claude/agents/` after a `.claude/` exclusion in `.gitignore`.
 
 ### Workflow
 

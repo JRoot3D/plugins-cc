@@ -1,6 +1,6 @@
 ---
 name: new
-description: Analyst agent that interviews the user about a feature, clarifies edge cases, and produces a structured brief for /flow:plan. Use when the user says "interview", "start brief", "new feature", "new feature brief", or /flow:new.
+description: Analyst agent that interviews the user about a feature, clarifies edge cases, and produces a structured brief for /flow:plan. Also bootstraps .flow-spec/project.md from manifest files on first run so downstream skills have deterministic build/lint/test commands. Use when the user says "interview", "start brief", "new feature", "new feature brief", "bootstrap project metadata", "set up project.md", "initialize flow project", or /flow:new.
 ---
 
 # Skill: /flow:new
