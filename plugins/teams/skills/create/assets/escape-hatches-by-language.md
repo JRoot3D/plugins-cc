@@ -1,6 +1,6 @@
 # Escape-hatch lists by language
 
-Reference data used by `/teams:init` when filling the `{{ESCAPE_HATCH_LIST}}` placeholder in `rules-templates/reviewer.md`. Pick the section matching the project's `language` from `.flow-spec/project.md` and render its bullets verbatim into the template.
+Reference data used by `/teams:create` when filling the `{{ESCAPE_HATCH_LIST}}` placeholder in `rules-templates/reviewer.md`. Pick the section matching the project's `language` from `.flow-spec/project.md` and render its bullets verbatim into the template.
 
 If `static_typing: no` in `project.md`, render the entire bullet (the `must-fix` line about escape hatches and its sub-bullet) as: `(skipped — static_typing: no)`.
 

@@ -17,7 +17,7 @@ After Serena activation, also read:
 - `.claude/rules/teams-flow/_shared.md` (if present)
 - `.claude/rules/teams-flow/reviewer.md` (if present)
 
-These are written by `/teams:init` and tune the team to the project's conventions. Treat any rule tagged `[must-fix]` as a hard rule equivalent to the rules listed below. Treat `[should-fix]` rules per the severity bar declared in `_shared.md`. Missing files = no extra rules (no hard-stop, no warning).
+These are written by `/teams:create` and tune the team to the project's conventions. Treat any rule tagged `[must-fix]` as a hard rule equivalent to the rules listed below. Treat `[should-fix]` rules per the severity bar declared in `_shared.md`. Missing files = no extra rules (no hard-stop, no warning).
 
 When `reviewer.md` is present, prefer its language-specific escape-hatch list over the hardcoded one in step 4 of the verification checklist below; fall back to the hardcoded list only when `reviewer.md` is absent.
 

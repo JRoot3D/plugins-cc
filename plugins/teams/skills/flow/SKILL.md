@@ -25,7 +25,7 @@ This skill requires:
 
 The four agent definitions (`flow-planner`, `flow-implementer`, `flow-reviewer`, `flow-checker`) ship with this plugin under `agents/` — no extra install needed. They own the role-specific instructions, tool allowlists, and exit-gate contracts; this skill orchestrates them.
 
-**Optional setup (recommended):** run `/teams:init` once per project before the first `/teams:flow` invocation. It detects the project's stack and conventions and writes per-role rule files under `.claude/rules/teams-flow/` that the four agents load at spawn time, giving them project-tuned guidance instead of generic defaults. Skipping it is fine — the agents fall back to their built-in rules.
+**Optional setup (recommended):** run `/teams:create` once per project before the first `/teams:flow` invocation. It detects the project's stack and conventions and writes per-role rule files under `.claude/rules/teams-flow/` that the four agents load at spawn time, giving them project-tuned guidance instead of generic defaults. Skipping it is fine — the agents fall back to their built-in rules.
 
 ## The Four Agents
 

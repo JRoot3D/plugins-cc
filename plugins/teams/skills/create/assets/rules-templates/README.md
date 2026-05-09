@@ -4,10 +4,10 @@ These files are loaded by the four flow-* agents (planner / implementer / review
 
 ## Editing
 - Rules tagged `[must-fix]` block the reviewer/checker; `[should-fix]` warns (per the severity bar in `_shared.md`).
-- The `# imported from CLAUDE.md` … `# end imported` block at the top of each file is **auto-regenerated** by `/teams:init`. To change those rules, edit `CLAUDE.md` and re-run `/teams:init`.
+- The `# imported from CLAUDE.md` … `# end imported` block at the top of each file is **auto-regenerated** by `/teams:create`. To change those rules, edit `CLAUDE.md` and re-run `/teams:create`.
 - Anything **outside** the imported block is preserved across re-runs. Edit freely.
 
-## Re-running `/teams:init`
+## Re-running `/teams:create`
 Safe and idempotent. Re-detects manifests, refreshes the imported block, preserves your edits.
 
 ## Removing

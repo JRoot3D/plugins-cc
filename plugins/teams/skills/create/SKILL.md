@@ -1,9 +1,9 @@
 ---
-name: init
-description: One-shot setup for /teams:flow projects. Detects language, build/type-check/lint/test commands, and CLAUDE.md conventions, then writes per-role rule files under .claude/rules/teams-flow/ that the four flow-* agents load at spawn time. Use when the user says "set up teams flow", "init the team", "configure teams:flow for this project", "tune the team for this codebase", or runs /teams:init.
+name: create
+description: One-shot setup for /teams:flow projects. Detects language, build/type-check/lint/test commands, and CLAUDE.md conventions, then writes per-role rule files under .claude/rules/teams-flow/ that the four flow-* agents load at spawn time. Use when the user says "set up teams flow", "create the team", "configure teams:flow for this project", "tune the team for this codebase", or runs /teams:create.
 ---
 
-# Skill: /teams:init
+# Skill: /teams:create
 
 > **Recommended model: Opus**
 
@@ -38,9 +38,9 @@ Templates use `{{PLACEHOLDER}}` markers; substitute them as described in **Step 
 - `.claude/rules/teams-flow/checker.md`
 - `.claude/rules/teams-flow/README.md`
 
-Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each rule file is regenerated; everything below is preserved.
+Re-running `/teams:create` is **idempotent and diff-merge safe**: the imported-from-`CLAUDE.md` block at the top of each rule file is regenerated; everything below is preserved.
 
-**Caveat — template content updates do not auto-propagate.** Because diff-merge only touches the imported block, changes to the body of the templates in `assets/rules-templates/` (new senior-baseline rules, reworded items, etc.) only reach **new** installs. Existing rule files keep their previous body. If the user pulls a plugin update and asks why their rules look unchanged, tell them: *"Re-runs preserve everything outside the imported block, including stale template content. To pull the latest baseline, delete the affected file in `.claude/rules/teams-flow/` and re-run `/teams:init`. Custom edits below the imported block will be lost — copy them aside first."*
+**Caveat — template content updates do not auto-propagate.** Because diff-merge only touches the imported block, changes to the body of the templates in `assets/rules-templates/` (new senior-baseline rules, reworded items, etc.) only reach **new** installs. Existing rule files keep their previous body. If the user pulls a plugin update and asks why their rules look unchanged, tell them: *"Re-runs preserve everything outside the imported block, including stale template content. To pull the latest baseline, delete the affected file in `.claude/rules/teams-flow/` and re-run `/teams:create`. Custom edits below the imported block will be lost — copy them aside first."*
 
 ---
 
@@ -52,7 +52,7 @@ Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-fro
 
 1. **Check** —
    - If `.flow-spec/project.md` exists with no `# unverified` markers → skip to Step 2.
-   - If it exists with `# unverified` markers → leave it alone (it's `/flow:new`'s draft awaiting confirmation), tell the user *"`.flow-spec/project.md` has unverified fields. Confirm or correct them, then re-run `/teams:init`."* and stop.
+   - If it exists with `# unverified` markers → leave it alone (it's `/flow:new`'s draft awaiting confirmation), tell the user *"`.flow-spec/project.md` has unverified fields. Confirm or correct them, then re-run `/teams:create`."* and stop.
    - If it does not exist → continue with Detect / Draft / Confirm below.
 
 2. **Detect** — scan the project root (and one directory level deep) for common manifest files. Apply these rules in order and stop at the first match (mirrors `plugins/flow/skills/new/SKILL.md` — keep them in sync):
@@ -83,7 +83,7 @@ Re-running `/teams:init` is **idempotent and diff-merge safe**: the imported-fro
    > "I generated a draft `.flow-spec/project.md` from the manifest files I found. Please review the `# unverified` fields, correct them if needed, and confirm before I write the team rules."
 
    Wait for confirmation. If the user wants to edit manually, tell them:
-   > "Draft saved. Edit `.flow-spec/project.md` and re-run `/teams:init` when ready."
+   > "Draft saved. Edit `.flow-spec/project.md` and re-run `/teams:create` when ready."
    And stop.
 
 ### Step 2 — Scan for additional cues
