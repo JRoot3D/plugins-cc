@@ -1,0 +1,51 @@
+{
+  "project": "Canvas",
+  "created": "2026-10-07",
+  "last_updated": "2026-10-07",
+  "nodes": [
+    {
+      "slug": "realtime-sync",
+      "name": "Realtime Sync",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/realtime-sync.md",
+      "summary": "Pushing edits to other clients."
+    },
+    {
+      "slug": "collaboration",
+      "name": "Collaboration",
+      "priority": "extension",
+      "maturity": "ready",
+      "file": "ideas/collaboration.md",
+      "summary": "Multiple users editing one board."
+    }
+  ],
+  "connections": [
+    {
+      "from": "realtime-sync",
+      "to": "collaboration",
+      "type": "shared-concern",
+      "note": "same WebSocket layer"
+    }
+  ],
+  "sessions": [
+    {
+      "date": "2026-10-07",
+      "skill": "map",
+      "scope": "full",
+      "summary": "full map"
+    },
+    {
+      "date": "2026-10-07",
+      "skill": "decide",
+      "node": "realtime-sync",
+      "summary": "realtime-sync ready"
+    },
+    {
+      "date": "2026-10-07",
+      "skill": "decide",
+      "node": "collaboration",
+      "summary": "collaboration ready"
+    }
+  ]
+}

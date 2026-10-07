@@ -1,8 +1,0 @@
-{
-  "name": "flow",
-  "description": "Multi-role feature workflow: new -> plan -> implement -> review -> check -> compact",
-  "version": "0.4.2",
-  "author": {
-    "name": "JRoot3D"
-  }
-}

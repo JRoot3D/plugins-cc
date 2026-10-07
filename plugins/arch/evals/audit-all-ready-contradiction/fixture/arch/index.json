@@ -1,0 +1,51 @@
+{
+  "project": "Pulse",
+  "created": "2026-10-07",
+  "last_updated": "2026-10-07",
+  "nodes": [
+    {
+      "slug": "deployment",
+      "name": "Deployment",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/deployment.md",
+      "summary": "Where and how the backend runs."
+    },
+    {
+      "slug": "background-jobs",
+      "name": "Background Jobs",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/background-jobs.md",
+      "summary": "Processing that runs outside requests."
+    }
+  ],
+  "connections": [
+    {
+      "from": "deployment",
+      "to": "background-jobs",
+      "type": "shared-concern",
+      "note": "both define the runtime"
+    }
+  ],
+  "sessions": [
+    {
+      "date": "2026-10-07",
+      "skill": "map",
+      "scope": "full",
+      "summary": "full map"
+    },
+    {
+      "date": "2026-10-07",
+      "skill": "decide",
+      "node": "deployment",
+      "summary": "deployment ready"
+    },
+    {
+      "date": "2026-10-07",
+      "skill": "decide",
+      "node": "background-jobs",
+      "summary": "background-jobs ready"
+    }
+  ]
+}

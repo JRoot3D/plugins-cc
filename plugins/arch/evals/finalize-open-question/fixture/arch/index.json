@@ -1,0 +1,30 @@
+{
+  "project": "Ledger",
+  "created": "2026-10-07",
+  "last_updated": "2026-10-07",
+  "nodes": [
+    {
+      "slug": "data-model",
+      "name": "Data Model",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/data-model.md",
+      "summary": "Core entities and storage."
+    }
+  ],
+  "connections": [],
+  "sessions": [
+    {
+      "date": "2026-10-07",
+      "skill": "map",
+      "scope": "full",
+      "summary": "full map"
+    },
+    {
+      "date": "2026-10-07",
+      "skill": "decide",
+      "node": "data-model",
+      "summary": "data-model ready"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "arch",
+  "version": "3.0.0",
+  "description": "Multi-session architecture exploration workflow — turn raw project ideas into feature briefs for OpenSpec changes",
+  "author": {
+    "name": "JRoot3D"
+  },
+  "repository": "https://github.com/JRoot3D/plugins-cc",
+  "license": "MIT",
+  "keywords": ["architecture", "planning", "brainstorm", "feature-briefs", "openspec"]
+}
