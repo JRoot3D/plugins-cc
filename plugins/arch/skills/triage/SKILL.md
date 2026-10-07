@@ -31,9 +31,6 @@ Node for this run (empty = all raw-idea nodes): $ARGUMENTS
 
 The live nodes are the entries in `index.json` → `nodes`; open node files through their `file` paths. `ideas/*.md` also matches `*.archived.md` (merged or split nodes) — never treat those as live nodes.
 
-**If `.arch/index.json` does not exist** — stop:
-> "No architecture session found. Run `/arch:new` first."
-
 **If no `raw-idea` nodes exist** — stop:
 > "All nodes are already past raw-idea stage. Triage works on raw ideas — nothing to enrich."
 

@@ -172,10 +172,18 @@ Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one)
 
 ## Permissions
 
-Each skill reads the current state through `scripts/arch.py summary` when it starts; that call is pre-approved and needs nothing from you. Writes to `.arch/index.json` also go through `arch.py`, but they happen after you confirm, in a later turn, where Claude Code asks for approval. To approve them once for good, add this rule to `permissions.allow` in your settings (it matches both the installed plugin and a `--plugin-dir` checkout):
+Each skill reads the current state through `scripts/arch.py summary` when it starts; that call is pre-approved and needs nothing from you. Writes to `.arch/index.json` also go through `arch.py`, but they happen after you confirm, in a later turn, where Claude Code asks for approval. To approve them once for good, add the rule for your install to `permissions.allow` in your settings. The skills call the script through `${CLAUDE_PLUGIN_ROOT}`, which expands to an absolute path, so the rule names the absolute path too — that way it approves only this plugin's script, not an `arch.py` inside a repository you open.
+
+Installed plugin (replace `/Users/you` with your home directory; `*` matches any plugin version):
 
 ```json
-"Bash(python3 */arch/*scripts/arch.py *)"
+"Bash(python3 /Users/you/.claude/plugins/cache/plugins-cc/arch/*/scripts/arch.py *)"
+```
+
+`--plugin-dir` checkout (use the checkout's absolute path):
+
+```json
+"Bash(python3 /absolute/path/to/plugins-cc/plugins/arch/scripts/arch.py *)"
 ```
 
 If you decline a write, the skill stops and tells you which change was not recorded — it never edits `index.json` itself. `arch.py check` (run by the skills after every write) reports anything left inconsistent.

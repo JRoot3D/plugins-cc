@@ -1,6 +1,6 @@
 ---
 name: finalize
-description: Ends an architector session — turns ready idea nodes from .arch/ into numbered feature briefs, each the input for OpenSpec changes, and a todo list; on later runs appends new stages without touching existing ones. Use when all blocking architector nodes are ready and the user wants implementation briefs.
+description: Ends an architector session — turns ready idea nodes from .arch/ into numbered feature briefs, each the input for OpenSpec changes, and a todo list; on later runs appends new stages without touching existing ones.
 disable-model-invocation: true
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
 ---
@@ -32,9 +32,6 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 
 Before proceeding, verify:
 
-0. **Session exists.** If `.arch/index.json` does not exist — stop:
-   > "No architecture session found. Run `/arch:new` first."
-
 1. **The gate is open** (`FINALIZE_GATE` in Current State): every blocking node is `ready` and `PROBLEMS` is none.
    If it is closed — stop and list every reason:
    > "Finalize is blocked:
@@ -63,7 +60,7 @@ Before proceeding, verify:
    - New stages group only `READY_NOT_IN_A_BRIEF` nodes (plus the nodes of briefs superseded below), are numbered after the highest existing `NN`, and use slugs that differ from existing ones.
    - For each brief in `BRIEFS_OUTDATED`, show what changed since its `_Arch revision:_` (the listed nodes' History lines and current decisions) and ask the user to choose:
      - **Supersede** — its todo-list row is still `not started`: write a replacement brief for the current decisions with `_Supersedes: [old file]_` in its header, add `_Superseded by: [new file] ([date])_` to the old brief's header, and set the old row's Status to `superseded`.
-     - **Follow up** — the stage is in progress, done or blocked: write a brief for the delta only (what changes relative to the implemented stage) that depends on the old stage, with `_Follows up: [old file]_` in its header, and add `_Followed up by: [new file] ([date])_` to the old brief's header.
+     - **Follow up** — the stage is in progress, done or blocked: write a brief for the delta only (what changes relative to the implemented stage) that depends on the old stage, with `_Follows up: [old file]_` in its header; in the old brief's header, add `_Followed up by: [new file] ([date])_`, set `_Arch revision:_` to the current `revision`, and remove archived slugs from `_Arch nodes covered:_` (also in the briefs it follows up).
      - **Keep** — the change does not affect the brief (never when a covered node was archived): set the old brief's `_Arch revision:_` to the current `revision`.
    - These header lines and Status → `superseded` are the only edits ever made to existing briefs and rows.
    If `READY_NOT_IN_A_BRIEF` and `BRIEFS_OUTDATED` are both none, say so and stop.

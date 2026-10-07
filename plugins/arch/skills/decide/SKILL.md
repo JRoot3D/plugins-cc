@@ -29,9 +29,6 @@ Arguments for this run: $ARGUMENTS
 
 The live nodes are the entries in `index.json` → `nodes`; open node files through their `file` paths. `ideas/*.md` also matches `*.archived.md` (merged or split nodes) — never treat those as live nodes.
 
-**If `.arch/index.json` does not exist** — stop:
-> "No architecture session found. Run `/arch:new` first."
-
 **If the node maturity is `raw-idea`** — warn:
 > "This node hasn't been explored yet. Running `/arch:decide` on a raw idea often produces shallow decisions. Recommend `/arch:explore [node]` first. Proceed anyway? (yes/no)"
 

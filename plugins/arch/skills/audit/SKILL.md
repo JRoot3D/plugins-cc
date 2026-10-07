@@ -30,9 +30,6 @@ Variant for this run (empty = full review): $ARGUMENTS
 - `.arch/project-context.md`
 - `.arch/feature-briefs/*.md` — if they exist (post-finalize review)
 
-**If `.arch/index.json` does not exist** — stop:
-> "No architecture session found. Run `/arch:new` first."
-
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 

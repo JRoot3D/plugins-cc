@@ -1,6 +1,6 @@
 ---
 name: new
-description: Starts an architector session in .arch/ — turns a raw project description into idea nodes, a node index and shared project context — or adds new idea nodes to an existing session. Use when the user wants to begin architecture exploration for a project or add ideas to an existing .arch/ board.
+description: Starts an architector session in .arch/ — turns a raw project description into idea nodes, a node index and shared project context — or adds new idea nodes to an existing session.
 argument-hint: "[project or idea description]"
 disable-model-invocation: true
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)

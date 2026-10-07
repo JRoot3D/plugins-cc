@@ -7,7 +7,7 @@ Read (always exit 0, safe to inject into a skill):
 Write (exit 1 with ERROR: on bad input, nothing written):
   init PROJECT                               create index.json (fails if it exists)
   add-node SLUG NAME PRIORITY SUMMARY        register an existing ideas/SLUG.md as a live raw-idea node
-  archive SLUG                               ideas/SLUG.md -> ideas/SLUG.archived.md, drop from nodes
+  archive SLUG                               ideas/SLUG.md -> ideas/SLUG.archived.md (SLUG-N.archived.md if taken), drop from nodes
   set SLUG FIELD VALUE                       maturity/priority: index + node file; name/summary: index only.
                                              decided/ready need a ## Decision section in the node file
   connect FROM TO TYPE NOTE                  add or update a connection (dependency|shared-concern|conflict);
@@ -19,7 +19,9 @@ Write (exit 1 with ERROR: on bad input, nothing written):
 index.json: {project, created, last_updated, nodes: [{slug, name, priority, maturity, file, summary}],
              connections: [{from, to, type, note}], sessions: [{date, skill, node (slug or list)?, scope?, summary}]}
 Revision = number of sessions entries. A feature brief records the revision it was written at (_Arch revision: N_);
-any later session that names one of its nodes makes it outdated until it is marked _Superseded by_ or _Followed up by_.
+any later session that names one of its nodes makes it outdated. _Superseded by_ retires a brief; _Followed up by_
+does not — finalize bumps the old brief's revision instead, so later changes to its nodes outdate it again, except
+nodes a brief that follows it up covers: those changes outdate only the newest brief in the chain.
 
 Python 3.8+, standard library only.
 """
@@ -277,8 +279,8 @@ def summary(data):
     if full_maps:
         last = full_maps[-1]
         changed = sorted({slug for s in sessions[last + 1:] for slug in changed_by(s)} & set(hist))
-        lines.append("LAST_MAP %s (full map, revision %d) — nodes changed since: %s" % (
-            sessions[last].get("date"), last + 1, ", ".join(changed) or "none (map is fresh)"))
+        lines.append("LAST_MAP %s (full map, revision %d, %d sessions since) — nodes changed since: %s" % (
+            sessions[last].get("date"), last + 1, len(sessions) - last - 1, ", ".join(changed) or "none (map is fresh)"))
     else:
         lines.append("LAST_MAP never — no full /arch:map yet")
 
@@ -288,13 +290,15 @@ def summary(data):
     if written:
         lines.append("BRIEFS %d written, %d superseded" % (len(written), len(written) - len(active)))
         outdated = []
+        # a follow-up, even one later superseded, takes over the nodes it covers from the brief it follows up
+        handed_on = {}
+        for _, meta in written:
+            handed_on.setdefault(meta.get("Follows up", ""), set()).update(brief_slugs(meta))
         for name, meta in active:
-            if "Followed up by" in meta:
-                continue
             rev = meta.get("Arch revision", "")
             later = sessions[int(rev):] if rev.isdigit() else sessions
             why = ["%s archived" % slug if slug not in hist else "%s %s" % (slug, "+".join(skills))
-                   for slug in brief_slugs(meta)
+                   for slug in brief_slugs(meta) if slug not in handed_on.get(name, ())
                    for skills in [sorted({s.get("skill") for s in later if slug in changed_by(s)})]
                    if slug not in hist or skills]
             if why:
@@ -372,11 +376,12 @@ def cmd_add_node(data, a):
 def cmd_archive(data, a):
     node = find_node(data, a.slug)
     src = node_path(node)
-    dst = os.path.join(ARCH, "ideas", "%s.archived.md" % a.slug)
     if not os.path.isfile(src):
         fail("node file missing: %s" % src)
-    if os.path.exists(dst):
-        fail("%s already exists" % dst)
+    dst, k = os.path.join(ARCH, "ideas", "%s.archived.md" % a.slug), 1
+    while os.path.exists(dst):  # archived before: SLUG-2.archived.md, SLUG-3.archived.md, ...
+        k += 1
+        dst = os.path.join(ARCH, "ideas", "%s-%d.archived.md" % (a.slug, k))
     os.rename(src, dst)
     data["nodes"].remove(node)
     save_index(data)
@@ -498,6 +503,8 @@ def parser():
 
 
 def main(argv):
+    for stream in (sys.stdout, sys.stderr):  # Windows pipes default to cp1252; node text is often not Latin
+        stream.reconfigure(encoding="utf-8")
     a = parser().parse_args(argv)
     reading = a.cmd in ("summary", "check")
     data = None

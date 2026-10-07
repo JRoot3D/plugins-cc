@@ -29,9 +29,6 @@ Nodes for this run (none = full map): $ARGUMENTS
 
 The live nodes are the entries in `index.json` → `nodes`; open node files through their `file` paths. `ideas/*.md` also matches `*.archived.md` (merged or split nodes) — never treat those as live nodes.
 
-**If `.arch/index.json` does not exist** — stop:
-> "No architecture session found. Run `/arch:new` first."
-
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
@@ -137,7 +134,7 @@ When the user wants to act on a merge or split suggestion:
 2. Ask: "What should the merged node be called — a new slug, or keep one of the two (e.g. fold [node-b] into [node-a])? What's the unified description?"
 3. Combine notes, connections, and history into the merged node — a new node file, or the kept node's file edited in place. Add a history entry to the merged node: `- [date] /arch:map — merged from [node-a] + [node-b]; [one-line reason, e.g. "both addressed the same WebSocket transport layer"]`
    - Priority: the higher of the two (blocking > core > extension > deferred)
-   - Maturity: the lower of the two (raw-idea < explored < decided < ready), but at most `explored` unless the kept node's `## Decision` still covers the whole merged scope unchanged. Move every other decision under `## Notes` as `Previous decision ([slug])` and suggest `/arch:decide` on the merged node
+   - Maturity: the lower of the two (raw-idea < explored < decided < ready), but at most `explored` unless the kept node's `## Decision` still covers the whole merged scope unchanged. If the kept node lands below `decided`, retitle its `## Decision` to `## Previous Decision (merged [date])`. Move every other decision under `## Notes` as `Previous decision ([slug])` and suggest `/arch:decide` on the merged node
 4. Register the result:
    - New slug: `arch.py add-node [merged-slug] "[Name]" [priority] "[summary]"`, then `arch.py set [merged-slug] maturity [level]` if it is not `raw-idea`. Archive both sources: `arch.py archive [node-a]`, `arch.py archive [node-b]` (renames them to `[slug].archived.md`)
    - Kept slug: `arch.py set [kept] priority|maturity|name|summary …` for whatever changed. Archive only the absorbed node — never the kept one

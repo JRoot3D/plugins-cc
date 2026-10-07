@@ -61,8 +61,9 @@ class ArchTest(unittest.TestCase):
         }
         write(self.root, "index.json", json.dumps(self.index))
 
-    def run_cli(self, *args):
-        r = subprocess.run([sys.executable, SCRIPT] + list(args), cwd=self.root, capture_output=True, text=True)
+    def run_cli(self, *args, env=None):
+        r = subprocess.run([sys.executable, SCRIPT] + list(args), cwd=self.root, capture_output=True, encoding="utf-8",
+                           env=dict(os.environ, **env) if env else None)
         return r.returncode, r.stdout + r.stderr
 
     def test_summary_derives_state_and_problems(self):
@@ -138,6 +139,7 @@ class ArchTest(unittest.TestCase):
         _, out = self.run_cli("summary")
         self.assertIn("LAST_NODE_WORKED_ON stack (", out)
         self.assertIn("— nodes changed since: stack\n", out)
+        self.assertIn("(full map, revision 3, 1 sessions since)", out)
 
     def test_only_a_full_map_refreshes_the_graph(self):
         self.run_cli("log", "map", "full", "--full")
@@ -169,8 +171,8 @@ class ArchTest(unittest.TestCase):
 
     def test_briefs_outdated_by_revision(self):
         self.run_cli("set", "stack", "maturity", "ready")
-        brief = "# Feature Brief: X\n_Stage: 01_\n_Arch nodes covered: stack, sync_\n_Arch revision: 1_\n%s\n## Goal\n"
-        write(self.root, "feature-briefs/01-x.md", brief % "")
+        brief = "# Feature Brief: X\n_Stage: 01_\n_Arch nodes covered: stack, sync_\n_Arch revision: %d_\n%s\n## Goal\n"
+        write(self.root, "feature-briefs/01-x.md", brief % (1, ""))
         _, out = self.run_cli("summary")
         self.assertIn("BRIEFS_OUTDATED none", out)
         self.assertIn("READY_NOT_IN_A_BRIEF none", out)
@@ -178,14 +180,45 @@ class ArchTest(unittest.TestCase):
         self.run_cli("log", "finalize", "wrote 02", "--node", "stack")  # finalize runs never outdate a brief
         _, out = self.run_cli("summary")
         self.assertIn("BRIEFS_OUTDATED 1\n  01-x.md — stack decide\n", out)
-        self.assertEqual(self.run_cli("archive", "sync")[0], 0)
-        self.assertIn("01-x.md — stack decide, sync archived", self.run_cli("summary")[1])
-        write(self.root, "feature-briefs/01-x.md", brief % "_Followed up by: 02-y.md (2026-10-07)_")
+        # a follow-up bumps the old brief to the current revision; later changes to its nodes outdate it again
+        write(self.root, "feature-briefs/01-x.md", brief % (3, "_Followed up by: 02-y.md (2026-10-07)_"))
         self.assertIn("BRIEFS_OUTDATED none", self.run_cli("summary")[1])
-        write(self.root, "feature-briefs/01-x.md", brief % "_Superseded by: 02-y.md (2026-10-07)_")
+        self.run_cli("log", "decide", "x", "--node", "sync")
+        self.assertIn("BRIEFS_OUTDATED 1\n  01-x.md — sync decide\n", self.run_cli("summary")[1])
+        self.assertEqual(self.run_cli("archive", "sync")[0], 0)
+        self.assertIn("01-x.md — sync archived", self.run_cli("summary")[1])
+        # the next follow-up drops the archived node from the covered list, which clears it
+        write(self.root, "feature-briefs/01-x.md", (brief % (4, "_Followed up by: 03-z.md (2026-10-07)_")).replace("stack, sync", "stack"))
+        self.assertIn("BRIEFS_OUTDATED none", self.run_cli("summary")[1])
+        write(self.root, "feature-briefs/01-x.md", brief % (3, "_Superseded by: 02-y.md (2026-10-07)_"))
         _, out = self.run_cli("summary")
         self.assertIn("BRIEFS 1 written, 1 superseded", out)
         self.assertIn("READY_NOT_IN_A_BRIEF stack", out)  # a superseded brief no longer covers its nodes
+
+    def test_follow_up_chain_reports_newest_brief(self):
+        write(self.root, "feature-briefs/01-x.md", "_Arch nodes covered: stack, sync_\n_Arch revision: 1_\n_Followed up by: 02-y.md_\n")
+        write(self.root, "feature-briefs/02-y.md", "_Arch nodes covered: stack_\n_Arch revision: 1_\n_Follows up: 01-x.md_\n")
+        self.run_cli("log", "decide", "x", "--node", "stack")
+        self.assertIn("BRIEFS_OUTDATED 1\n  02-y.md — stack decide\n", self.run_cli("summary")[1])
+        self.run_cli("log", "decide", "y", "--node", "sync")  # 02 does not cover sync, so 01 still answers for it
+        self.assertIn("BRIEFS_OUTDATED 2\n  01-x.md — sync decide\n  02-y.md — stack decide\n", self.run_cli("summary")[1])
+
+    def test_archive_twice_picks_a_free_name(self):
+        self.assertEqual(self.run_cli("archive", "sync")[0], 0)
+        write(self.root, "ideas/sync.md", node("sync", "core", "raw-idea"))
+        self.assertEqual(self.run_cli("add-node", "sync", "Sync", "core", "again")[0], 0)
+        code, out = self.run_cli("archive", "sync")
+        self.assertEqual(code, 0, out)
+        self.assertIn("sync-2.archived.md", out)
+        _, out = self.run_cli("summary")
+        self.assertIn("archived=3", out)
+        self.assertNotIn("not in index.json", out)
+
+    def test_non_utf8_stdout(self):
+        self.assertEqual(self.run_cli("set", "sync", "summary", "Вибір стеку")[0], 0)
+        code, out = self.run_cli("summary", env={"PYTHONIOENCODING": "cp1252"})
+        self.assertEqual(code, 0, out)
+        self.assertIn("Вибір стеку", out)
 
     def test_schema_and_slug_validation(self):
         write(self.root, "index.json", json.dumps({"nodes": "broken"}))

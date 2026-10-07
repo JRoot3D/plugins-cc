@@ -29,9 +29,6 @@ Variant for this run (empty = full report): $ARGUMENTS
 
 The live nodes are the entries in `index.json` → `nodes`; open node files through their `file` paths. `ideas/*.md` also matches `*.archived.md` (merged or split nodes) — never treat those as live nodes.
 
-**If `.arch/index.json` does not exist** — stop:
-> "No architecture session found. Run `/arch:new` first."
-
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
@@ -95,7 +92,7 @@ SUGGESTED NEXT ACTION
 ```
 
 ### Step 3 — Map Freshness
-Use `LAST_MAP` from Current State — it names the nodes changed since the last map run. For [N], count the `sessions` entries after that run.
+Use `LAST_MAP` from Current State — it gives [N], the sessions since the last full map run, and names the nodes changed since.
 
 ```
 MAP FRESHNESS
