@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code **plugin marketplace**, not a normal code project. There is no build and no linter. The "deliverables" are mostly `SKILL.md` markdown files that Claude Code loads as skills at runtime. Treat changes to them like editing prompts: correctness is checked by reading the skills end-to-end and by running them against a real project.
 
-The marketplace is declared in `.claude-plugin/marketplace.json`. It ships one plugin:
+The marketplace is declared in `.claude-plugin/marketplace.json`. It ships two plugins:
 
 - **`arch`** — multi-session architecture exploration (`/arch:new` → `triage` → `explore` ↔ `map` → `decide` → `finalize`, with `status` and `audit` anytime). `/arch:finalize` hands feature briefs to OpenSpec (`/opsx:propose`). Unlike a pure-markdown plugin it has code: `scripts/arch.py` (python3 3.8+, stdlib) owns `.arch/index.json`. Before changing it, read [plugins/arch/README.md → Development](plugins/arch/README.md#development): run `python3 plugins/arch/scripts/test_arch.py` (it also fails when a line the skills share drifts), the behaviour evals live in `plugins/arch/evals/`, and bump `version` in its `plugin.json` with every skill change.
+- **`openspec-dashboard`** — a mod (hooks module, no skills): `hooks/register.tsx` draws the `/openspec` pane. Check it with `claude plugin validate plugins/openspec-dashboard` and `claude plugin test plugins/openspec-dashboard`; `.claude-plugin/types/` is written by the engine on load and gitignored.
 
 ## Repo layout
 

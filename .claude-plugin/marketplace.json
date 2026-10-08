@@ -9,6 +9,11 @@
       "name": "arch",
       "source": "./plugins/arch",
       "description": "Multi-session architecture exploration — turn raw project ideas into feature briefs for OpenSpec changes"
+    },
+    {
+      "name": "openspec-dashboard",
+      "source": "./plugins/openspec-dashboard",
+      "description": "OpenSpec changes pane: task progress, tick tasks, run apply/verify/archive or a single task"
     }
   ]
 }

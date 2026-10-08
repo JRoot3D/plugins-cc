@@ -1,0 +1,12 @@
+{
+  "name": "openspec-dashboard",
+  "version": "0.1.0",
+  "description": "OpenSpec changes pane: task progress, tick tasks, run apply/verify/archive or a single task",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "JRoot3D"
+  },
+  "repository": "https://github.com/JRoot3D/plugins-cc",
+  "license": "MIT",
+  "keywords": ["openspec", "tasks", "pane", "mod"]
+}
