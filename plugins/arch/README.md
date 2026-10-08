@@ -77,6 +77,10 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 | Want to know how implementation of the feature briefs is going | `/arch:status` |
 | Checking for drift between OpenSpec changes and the feature briefs they came from | `/arch:audit openspec` |
 
+## Graph Pane
+
+`/arch-graph` opens a side pane with the dependency graph from `.arch/index.json`: nodes grouped into layers by dependency depth (layer 0 has no prerequisites), each with its maturity symbol, priority and `← prerequisites`; nodes caught in a dependency cycle under `cycle`; then shared concerns (`↔`) and conflicts (`⚡`). Press a node (click it, or ctrl+x tab into the pane and Enter) to run `/arch:explore` on it — queued until the current turn ends. It redraws after every `arch.py` call, so it follows `/arch:map`, `/arch:decide` and the rest live. In a fullscreen terminal 144+ columns wide it opens by itself when the project has an `.arch/index.json`; run `/arch-graph` again to refresh after editing the index by hand.
+
 ## Idea Node Maturity
 
 ```
@@ -213,7 +217,7 @@ To work on the skills themselves, from the repository root:
 claude --plugin-dir plugins/arch
 ```
 
-Each skill is self-contained in `skills/<name>/SKILL.md` — outside auto mode, reading other plugin files at runtime triggers a permission prompt, so shared rules (index schema, write rules) are repeated where they are needed; keep them in sync when changing one. `scripts/arch.py` (Python 3.8+, standard library) owns `.arch/index.json`: skills inject its `summary` at start and change the index only through its commands, so counts, dates and the node-file/index copies stay consistent. Tests: `python3 plugins/arch/scripts/test_arch.py` — they also fail when a line shared between skills drifts or goes missing.
+Each skill is self-contained in `skills/<name>/SKILL.md` — outside auto mode, reading other plugin files at runtime triggers a permission prompt, so shared rules (index schema, write rules) are repeated where they are needed; keep them in sync when changing one. `hooks/register.tsx` is the graph pane (a hooks-module mod, read-only on `.arch/index.json`): check it with `claude plugin validate plugins/arch` and `claude plugin test plugins/arch` (tests in `tests/`); `.claude-plugin/types/` is written by the engine on load and gitignored. `scripts/arch.py` (Python 3.8+, standard library) owns `.arch/index.json`: skills inject its `summary` at start and change the index only through its commands, so counts, dates and the node-file/index copies stay consistent. Tests: `python3 plugins/arch/scripts/test_arch.py` — they also fail when a line shared between skills drifts or goes missing.
 
 Behaviour evals (`evals/`, [plugin evals](https://code.claude.com/docs/en/plugin-evals)) run the real skills on seeded boards: an all-`ready` board with contradictory decisions (`/arch:audit` must still catch it), a node whose decision reaches past another node's `Boundary:` (`/arch:audit` must flag the bypass), a structurally clean board with an open question (`/arch:finalize` must stop), and a merge of two `ready` nodes (the result must not stay `ready`). From `plugins/arch`:
 
