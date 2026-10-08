@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
-import { parseArgs } from 'node:util'
 
 const DOC = `Deterministic helpers for the architector skills. Owns .arch/index.json. Run from the project root.
 
@@ -18,7 +17,7 @@ Write (exit 1 with ERROR: on bad input, nothing written):
                                              for dependency, FROM must be decided before TO
   disconnect FROM TO [TYPE]                  remove matching connections
   rename OLD NEW                             repoint connections from OLD to NEW (merge/split), drop self-links and duplicates
-  log SKILL SUMMARY [--node SLUG ...] [--full]  append a sessions entry, bump last_updated; --full marks a whole-graph map
+  log SKILL SUMMARY [--node SLUG]... [--full]   append a sessions entry, bump last_updated; --full marks a whole-graph map
 
 index.json: {project, created, last_updated, nodes: [{slug, name, priority, maturity, file, summary}],
              connections: [{from, to, type, note}], sessions: [{date, skill, node (slug or list)?, scope?, summary}]}
@@ -44,7 +43,6 @@ const ARGS = {
   rename: 'OLD NEW',
   log: 'SKILL SUMMARY [--node SLUG]... [--full]',
 }
-const LOG_OPTIONS = { node: { type: 'string', multiple: true }, full: { type: 'boolean' } }
 
 const ARCH = '.arch'
 const INDEX = `${ARCH}/index.json`
@@ -595,13 +593,16 @@ const main = argv => {
   const [cmd, ...rest] = argv
   if (cmd === '-h' || cmd === '--help') return console.log(DOC)
   if (!Object.hasOwn(ARGS, cmd ?? '')) fail(`command must be one of ${Object.keys(ARGS).join(', ')} (--help for details)`)
-  let parsed
-  try {
-    parsed = parseArgs({ args: rest, allowPositionals: true, options: cmd === 'log' ? LOG_OPTIONS : {} })
-  } catch (e) {
-    fail(e.message)
+  // Only log's --node and --full are options; any other word, '-' first or not, is positional. `--` ends options.
+  const args = []
+  const values = { node: [], full: false }
+  for (let i = 0, options = true; i < rest.length; i++) {
+    const word = rest[i]
+    if (options && word === '--') options = false
+    else if (options && cmd === 'log' && word === '--full') values.full = true
+    else if (options && cmd === 'log' && word === '--node') values.node.push(rest[++i] ?? fail("option '--node' needs a SLUG"))
+    else args.push(word)
   }
-  const { positionals: args, values } = parsed
   const words = ARGS[cmd].split(' ').filter(w => /^\[?[A-Z]+\]?$/.test(w))
   if (args.length < words.filter(w => !w.startsWith('[')).length || args.length > words.length) fail(`usage: ${cmd} ${ARGS[cmd]}`.trim())
 

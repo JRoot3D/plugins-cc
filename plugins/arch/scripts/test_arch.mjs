@@ -124,6 +124,12 @@ describe('arch.mjs', () => {
     assert.equal(data.last_updated, data.sessions.at(-1).date)
     assert.equal(run('log', 'decide', 'x', '--node', 'ghost').code, 1)
     assert.equal(run('log', 'status', 'x').code, 1)
+    // a SUMMARY or NOTE may start with '-'; `--` still ends options
+    assert.equal(run('log', 'explore', '- added 3 nodes', '--node', 'stack').code, 0)
+    assert.equal(indexNow().sessions.at(-1).summary, '- added 3 nodes')
+    assert.equal(run('log', 'explore', '--', '-1 rows').code, 0)
+    assert.equal(indexNow().sessions.at(-1).summary, '-1 rows')
+    assert.equal(run('log', 'decide', 'x', '--node').code, 1)
   })
 
   test('connections and merge', () => {
