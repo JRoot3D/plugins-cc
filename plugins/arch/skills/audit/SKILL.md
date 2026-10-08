@@ -1,7 +1,7 @@
 ---
 name: audit
-description: Read-only audit of an architector session in .arch/ — missing concerns, contradictory decisions, depth imbalances, dependency risks, reversal risk and cross-cutting gaps, adapted to the current maturity stage. Use when the user wants the architector architecture checked for gaps or inconsistencies.
-argument-hint: "[node-slug|consistency|gaps]"
+description: Read-only audit of an architector session in .arch/ — missing concerns, contradictory decisions, depth imbalances, dependency risks, reversal risk and cross-cutting gaps, adapted to the current maturity stage, plus drift between OpenSpec changes and the feature briefs they came from. Use when the user wants the architector architecture checked for gaps or inconsistencies, or OpenSpec changes checked against their briefs.
+argument-hint: "[node-slug|consistency|gaps|openspec]"
 disallowed-tools: [Write, Edit, NotebookEdit]
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary)
 ---
@@ -21,6 +21,7 @@ but to tell them what they're getting wrong or overlooking.
 /arch:audit [node]             ← focused review of one node's decisions and context
 /arch:audit consistency        ← only cross-node consistency checks
 /arch:audit gaps               ← only missing concerns check
+/arch:audit openspec           ← only OpenSpec changes vs the briefs they came from
 ```
 Variant for this run (empty = full review): $ARGUMENTS
 
@@ -29,6 +30,7 @@ Variant for this run (empty = full review): $ARGUMENTS
 - `.arch/ideas/[slug].md` — the node files listed in `index.json`
 - `.arch/project-context.md`
 - `.arch/feature-briefs/*.md` — if they exist (post-finalize review)
+- `openspec/changes/[name]/` and `openspec/changes/archive/[date]-[name]/` — `proposal.md` and `design.md` of the changes `STAGES` and `CHANGES_NOT_IN_A_BRIEF` name (read-only)
 
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
@@ -227,7 +229,36 @@ For each node, assess whether its scope is appropriate:
   ⚠️  Too narrow: "button-styles" is a standalone node but could be a detail under "design-system".
 ```
 
-### Step 9 — Summary & Recommendations
+### Step 9 — OpenSpec Drift
+
+Only when `STAGES` lists a stage `planned`, `in progress` or `done`, or `CHANGES_NOT_IN_A_BRIEF` lists a change; otherwise skip this step silently. `/opsx:verify` checks code against a change's artifacts — this step checks the artifacts against the arch handoff.
+
+- **Changes from a brief** — every proposed or archived change of those stages (`N/M tasks`, `proposed (no tasks yet)` or `archived [date]` in its `STAGES` line). Compare its `design.md` → Decisions and Non-Goals with its own brief's `## Key Decisions Already Made` and `## Out of Scope` — the snapshot arch handed over, not the nodes' current decisions (changes since the brief are `BRIEFS_OUTDATED`, reported in Step 3). A design that matches a follow-up brief (down its brief's `_Followed up by:_` chain) that its proposal names is not drift. A change with no task done whose brief is followed up but whose proposal does not name the follow-up brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[follow-up brief]`; one with tasks done finishes on its own brief's decisions. A change with no task done of a stage whose brief has `_Supersedes:_`, whose proposal names only the superseded brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[brief]`.
+  - A contradiction is 🔴. Remedy by the change's own `STAGES` entry: `proposed (no tasks yet)` or `0/M tasks` → revise it with `/opsx:update [change] @.arch/feature-briefs/[brief]`; tasks done or `archived` → `/arch:decide [node]` (the covered node the Key Decision came from) to record what was built, then `/arch:finalize` follows the brief up.
+  - No `design.md` → compare with `proposal.md` instead. An active change also gets 🟡 "Key Decisions not carried into design.md" → `/opsx:continue [change]` (expanded profile — `openspec config profile`) or have the agent follow `openspec instructions design --change [change]`, then `/opsx:update [change] @.arch/feature-briefs/[brief]` if tasks.md must follow. An archived one does not.
+- **Changes not from a brief** (`CHANGES_NOT_IN_A_BRIEF`) — read the change's `proposal.md`. If it names a brief, the change was renamed during propose → 🟡, `/arch:finalize` corrects that brief's `- Changes:` line; if that brief is marked `_Superseded by:_`, the change was proposed from a retired brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[the brief its _Superseded by:_ names]` (no task done) and `/arch:finalize` puts the name on that brief's Changes line. If it touches a node's area → 🟡 "decided outside arch" → `/arch:decide [node]`. Otherwise it is unrelated — leave it out.
+
+**Output format:**
+```
+🧭 OPENSPEC DRIFT
+  🔴 Contradiction:
+    • add-auth (02-auth.md, 5/12 tasks) — design.md chose server-side sessions; the brief's
+      Key Decision is stateless JWT (auth).
+      → /arch:decide auth to record what was built, then /arch:finalize follows the brief up
+
+  🟡 Not carried over:
+    • export-csv (03-export.md, proposed, no design.md) — Key Decisions not carried into design.md
+      → /opsx:continue export-csv (or follow `openspec instructions design --change export-csv`),
+        then /opsx:update export-csv @.arch/feature-briefs/03-export.md if tasks.md must follow
+
+  🟡 Outside the briefs:
+    • add-login — its proposal names 02-auth.md: renamed during propose → /arch:finalize corrects the brief's Changes line
+    • cache-layer — adds a Redis cache, the area of "data-model": decided outside arch → /arch:decide data-model
+
+  ✅ Match their briefs: setup-project, auth-ui
+```
+
+### Step 10 — Summary & Recommendations
 
 End with a prioritized action list:
 
@@ -252,6 +283,9 @@ For each action, indicate which skill to use:
   → /arch:explore [node]
   → /arch:decide [node]
   → /arch:map
+  → /arch:finalize (supersedes, follows up or corrects a brief)
+  → /opsx:update [change] @[brief] (revises an OpenSpec change with no task done)
+  → /opsx:continue [change] (creates a missing design.md — expanded profile)
 ```
 
 ---
@@ -274,12 +308,16 @@ and want to verify they don't conflict.
 Run only Step 2 (Missing Concerns) in full depth. Useful early in the process when you want to
 make sure you haven't missed major architectural areas.
 
+**`/arch:audit openspec`**
+Run only Step 9 (OpenSpec Drift). If its condition is false, say why in one line: no feature briefs yet, no `openspec/` directory, or no change proposed from a brief (stages `not started` or `unknown`) and none outside them.
+
 ---
 
 ## Rules
 - This skill is read-only — do not modify any files
 - Do not make decisions or recommend specific technical choices — flag the gap, not the solution
-- Do not duplicate `/arch:status` — don't report maturity counts or progress bars
+- Do not duplicate `/arch:status` — don't report maturity counts, progress bars or task progress
+- Do not duplicate `/opsx:verify` — Step 9 compares a change's artifacts with the brief it came from, never the code with the artifacts
 - Do not duplicate `/arch:map` — don't visualize relationships or design merges/splits; when a scope concern calls for one, point to `/arch:map [node]`
 - Be direct about problems — do not soften critical findings
 - Adapt checks to the maturity stage — don't flag missing decisions on raw-idea nodes

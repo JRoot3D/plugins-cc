@@ -2,7 +2,8 @@
 """Deterministic helpers for the architector skills. Owns .arch/index.json. Run from the project root.
 
 Read (always exit 0, safe to inject into a skill):
-  summary                                    state report: counts, stage, finalize gate, map and brief freshness, problems
+  summary                                    state report: counts, stage, finalize gate, map and brief freshness, problems,
+                                             implementation state of the briefs (reads openspec/changes/, read-only)
   check                                      consistency problems only
 Write (exit 1 with ERROR: on bad input, nothing written):
   init PROJECT                               create index.json (fails if it exists)
@@ -22,6 +23,8 @@ Revision = number of sessions entries. A feature brief records the revision it w
 any later session that names one of its nodes makes it outdated. _Superseded by_ retires a brief; _Followed up by_
 does not — finalize bumps the old brief's revision instead, so later changes to its nodes outdate it again, except
 nodes a brief that follows it up covers: those changes outdate only the newest brief in the chain.
+A brief names its OpenSpec changes on the first `- Changes:` line of its ## OpenSpec Handoff; summary derives each
+stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI.
 
 Python 3.8+, standard library only.
 """
@@ -42,6 +45,12 @@ SKILLS = ["new", "triage", "explore", "map", "decide", "finalize"]
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRIEF_META = re.compile(r"^_([A-Za-z ]+):\s*(.*?)_\s*$")
 HISTORY_LINE = re.compile(r"^-\s*\[?(\d{4}-\d{2}-\d{2})\]?\s+/arch:([\w-]+)\s*[—–-]*\s*(.*)$")
+CHANGES = os.path.join("openspec", "changes")
+CHANGE_NAME = re.compile(r"`?([a-z0-9]+(?:-[a-z0-9]+)*)")
+ARCHIVED_CHANGE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+)$")
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# OpenSpec 1.14.1 TASK_LINE_PATTERN (src/utils/task-progress.ts): any list marker, one-character box, not a link
+TASK_LINE = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])\s*\[(?:\s*([^\]\s]?)\s*\](?![(\[])|\s+\])")
 
 
 def fail(msg):
@@ -65,9 +74,9 @@ def save_index(data):
     write(INDEX, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
-def read(path):
+def read(path, errors="strict"):
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8", errors=errors) as f:
             return f.read()
     except OSError:
         return None
@@ -161,6 +170,77 @@ def briefs():
 
 def brief_slugs(meta):
     return [s.strip() for s in meta.get("Arch nodes covered", "").split(",") if s.strip()]
+
+
+def brief_changes(name):
+    """Change names on the first '- Changes:' line of a brief's ## OpenSpec Handoff (backticks and notes dropped)."""
+    handoff = sections(read(os.path.join(ARCH, "feature-briefs", name))).get("OpenSpec Handoff", [])
+    line = next((line for line in handoff if line.startswith("- Changes:")), "")
+    found = (CHANGE_NAME.match(item.strip()) for item in re.split(r"[,;]|→|->", line.partition(":")[2]))
+    return [m.group(1) for m in found if m]
+
+
+def subdirs(path):
+    """Sorted directory names, hidden ones skipped like OpenSpec does."""
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return []
+    return sorted(d for d in names if not d.startswith(".") and os.path.isdir(os.path.join(path, d)))
+
+
+def tasks(change):
+    """(done, total) in the change's tasks.md, counted the way OpenSpec counts them."""
+    # ponytail: reads tasks.md only; a custom schema whose apply.tracks names another file shows no tasks
+    text = (read(os.path.join(CHANGES, change, "tasks.md"), errors="replace") or "").lstrip("\ufeff")  # JS \s matches a BOM
+    found = [m for m in (TASK_LINE.match(line) for line in text.split("\n")) if m]
+    return sum((m.group(1) or "").lower() == "x" for m in found), len(found)
+
+
+def implementation(written):
+    """STAGES and CHANGES_NOT_IN_A_BRIEF lines: what openspec/changes/ holds for each brief's changes."""
+    proposed = [d for d in subdirs(CHANGES) if d != "archive"]
+    archived = {}
+    for d in subdirs(os.path.join(CHANGES, "archive")):  # sorted, so the latest date wins
+        m = ARCHIVED_CHANGE.match(d)
+        if m:
+            archived[m.group(2)] = m.group(1)
+    stages = [name for name, meta in written if "Superseded by" not in meta]
+    names = {name: brief_changes(name) for name in stages}
+    lines = ["STAGES %d%s" % (len(stages), "" if os.path.isdir("openspec") else " — no openspec/ directory here")]
+    for name in stages:
+        if not names[name]:
+            lines.append("  %s — unknown: its OpenSpec Handoff names no changes" % name)
+            continue
+        if os.path.isdir("openspec") and not os.path.isdir(CHANGES):
+            # ponytail: a store-backed OpenSpec root keeps its changes outside the repo; reading them needs the CLI
+            lines.append("  %s — unknown: openspec/changes/ not found (store-backed root?)" % name)
+            continue
+        parts, kinds, done = [], set(), 0
+        for c in names[name]:  # an active change wins over an archived one of the same name
+            if c in proposed:
+                n, total = tasks(c)
+                kinds.add("proposed")
+                done += n
+                parts.append("%s %d/%d tasks" % (c, n, total) if total else "%s proposed (no tasks yet)" % c)
+            elif c in archived:
+                kinds.add("archived")
+                parts.append("%s archived %s" % (c, archived[c]))
+            else:
+                kinds.add("not proposed")
+                parts.append("%s not proposed" % c)
+        state = ("done" if kinds == {"archived"} else "not started" if kinds == {"not proposed"} else
+                 "planned" if "archived" not in kinds and not done else "in progress")
+        lines.append("  %s — %s: %s" % (name, state, "; ".join(parts)))
+    if os.path.isdir(CHANGES):
+        listed = {c for found in names.values() for c in found}
+        # archived changes older than the first brief predate arch's handoff
+        since = min((d for d in (meta.get("Created", "")[:10] for _, meta in written) if DATE.match(d)), default=None)
+        extra = sorted(c for c in proposed if c not in listed) + [
+            "%s (archived %s)" % (c, d) for c, d in sorted(archived.items())
+            if since and d >= since and c not in listed and c not in proposed]
+        lines.append("CHANGES_NOT_IN_A_BRIEF " + (", ".join(extra) or "none"))
+    return lines
 
 
 def find_node(data, slug):
@@ -307,6 +387,8 @@ def summary(data):
         lines += outdated
     uncovered = [n.get("slug") for n in nodes if n.get("maturity") == "ready" and n.get("slug") not in covered]
     lines.append("READY_NOT_IN_A_BRIEF " + (", ".join(uncovered) or "none"))
+    if written:
+        lines += implementation(written)
 
     if sessions:
         last = sessions[-1]
@@ -504,7 +586,7 @@ def parser():
 
 def main(argv):
     for stream in (sys.stdout, sys.stderr):  # Windows pipes default to cp1252; node text is often not Latin
-        stream.reconfigure(encoding="utf-8")
+        stream.reconfigure(encoding="utf-8", errors="replace")
     a = parser().parse_args(argv)
     reading = a.cmd in ("summary", "check")
     data = None

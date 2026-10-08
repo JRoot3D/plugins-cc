@@ -36,17 +36,19 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 /arch:explore                 ← navigate and deepen any node
 /arch:map                     ← visualise connections (use anytime)
 /arch:decide [node]           ← lock in a decision: alternatives, rationale, assumptions, confirmation
-/arch:status                  ← where are we, what's blocking
-/arch:audit                  ← audit for gaps, inconsistencies, risks
+/arch:status                  ← where are we, what's blocking, how implementation is going
+/arch:audit                   ← audit for gaps, inconsistencies, risks, drift from the briefs
 
       ↓ repeat until all blocking nodes reach `ready`
 
 /arch:finalize
       ↓ creates: .arch/feature-briefs/NN-[slug].md
                  .arch/todo-list.md
+      ↓ updates: openspec/config.yaml  (context, rules, apply guidance — after you confirm)
 
       ↓ each stage becomes OpenSpec changes:
-        /opsx:explore (open questions) → /opsx:propose → /opsx:apply → /opsx:verify → /opsx:archive
+        /opsx:explore (open questions) → /opsx:propose [change] @brief → /opsx:apply → /opsx:archive
+        /arch:status tracks them; /arch:audit openspec checks them against their briefs
 ```
 
 ## When to Use Which Skill
@@ -71,6 +73,9 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 | All blocking nodes are ready | `/arch:finalize` |
 | More nodes became ready after finalizing | `/arch:finalize` (appends new stages) |
 | A decision changed after its brief was written | `/arch:finalize` (supersedes or follows up the brief) |
+| Ran `openspec init` after finalizing | `/arch:finalize` (adds the arch config to `openspec/config.yaml`) |
+| Want to know how implementation of the feature briefs is going | `/arch:status` |
+| Checking for drift between OpenSpec changes and the feature briefs they came from | `/arch:audit openspec` |
 
 ## Idea Node Maturity
 
@@ -107,7 +112,7 @@ Non-blocking nodes that aren't ready are flagged but do not block finalization.
 
 Decisions follow ADR practice ([MADR](https://adr.github.io/madr/)): each `## Decision` lists alternatives, rationale, implications, the **assumptions** it rests on (with confidence and basis — a dated source, a spike or a measurement) and a **confirmation** criterion that would show it is wrong. Evidence is scaled to reversal cost: a database choice needs more than a logging library. A revisited decision is kept as `## Previous Decision (superseded …)`, never erased.
 
-Feature briefs are append-only. Each records the board revision it was written at (`_Arch revision: N_`); when a covered node changes later, `summary` lists the brief under `BRIEFS_OUTDATED`, and `/arch:finalize` asks whether to **supersede** it (stage not started: a replacement brief, the old row becomes `superseded`), **follow it up** (stage in progress or done: a delta brief that depends on it) or **keep** it.
+Feature briefs are append-only. Each records the board revision it was written at (`_Arch revision: N_`); when a covered node changes later, `summary` lists the brief under `BRIEFS_OUTDATED`, and `/arch:finalize` asks whether to **supersede** it (a replacement brief; the old todo-list row is marked superseded), **follow it up** (a delta brief that depends on it) or **keep** it. The stage's state in OpenSpec decides which: `not started` → supersede or keep; `planned` → supersede or keep, where the replacement keeps the change names and you revise the proposed change with `/opsx:update [change] @.arch/feature-briefs/[new brief]` before `/opsx:apply` (one with no tasks yet is continued with `/opsx:propose [change] @.arch/feature-briefs/[new brief]`); `in progress` or `done` → follow up or keep. When the state is `unknown`, or there is no `openspec/` directory here, finalize asks how far the stage got. After a follow up, a change of the old stage that already has tasks done finishes on the old brief's decisions; one with no task done takes the follow-up brief too: not proposed or no tasks yet → `/opsx:propose [change] @[old brief] @[follow-up brief]`; `0/M tasks` → `/opsx:update [change] @[follow-up brief]` before `/opsx:apply`.
 
 ## .arch/ Structure
 
@@ -143,13 +148,15 @@ Architect flow (.arch/)              OpenSpec (openspec/)
 /arch:triage
 /arch:explore     ──────→            /opsx:propose   ← proposal, delta specs, design, tasks
 /arch:map      feature-brief         /opsx:apply
-/arch:decide                         /opsx:verify
-/arch:status                         /opsx:archive   ← merges delta specs into openspec/specs/
-/arch:audit
+/arch:decide                         /opsx:verify    ← optional (not in OpenSpec's core profile)
+/arch:status      ←──────            /opsx:archive   ← merges delta specs into openspec/specs/
+/arch:audit    openspec/changes/
 /arch:finalize
 ```
 
-Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one) and whether to start with `/opsx:explore`. Then, per change: `/opsx:propose [change-name] @.arch/feature-briefs/NN-slug.md`.
+Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one), the capabilities each one adds or modifies, and whether to start with `/opsx:explore`. Then, per change: `/opsx:propose [change-name] @.arch/feature-briefs/NN-slug.md` → `/opsx:apply` → `/opsx:archive`. Propose each change under exactly the name on the brief's `- Changes:` line — that name is how arch tracks it. If a change ended up under another name, or was merged, split or dropped, `/arch:finalize` corrects the line after you confirm — even while the gate is closed.
+
+`- Capabilities:` lists, per change, the capability ids it adds (New) or changes (Modified — ids from `openspec/specs/`, or New in an earlier stage); `/opsx:propose` treats them as a starting point. A change that only sets up tooling, infrastructure or docs says `none — skip_specs: true`, and OpenSpec's proposal step marks it `skip_specs: true` in the change's `.openspec.yaml`, so it validates and archives without delta specs.
 
 | Brief section | Lands in |
 |---------------|----------|
@@ -159,7 +166,17 @@ Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one)
 | Open Technical Questions | `/opsx:explore`, or `design.md → Open Questions` when deferrable |
 | Out of Scope | `design.md → Non-Goals` |
 
-`/arch:finalize` also offers to fill the `context:` field of `openspec/config.yaml` from `.arch/project-context.md` and the blocking decisions, so every change sees them. `.arch/` keeps why each decision was made; `openspec/specs/` keeps what the system does.
+`/arch:finalize` also writes three fields of `openspec/config.yaml` (or a legacy `config.yml`) — it shows each edit and writes it only after you confirm:
+
+- `context:` — from `.arch/project-context.md` plus a `Settled architecture (rationale in .arch/):` line with the blocking decisions. OpenSpec injects it into every artifact, apply and archive. Arch owns only that one line: a later run proposes refreshing it when a blocking decision or the set of blocking nodes changed; everything else in `context:` is yours. An in-progress change then sees the new decision in `context:` but finishes on its `design.md`; the new decision arrives with the follow-up brief's change.
+- `rules:` (`proposal`, `design`, `tasks`) — OpenSpec adds them to an artifact's instructions when propose, update or continue writes it; they never reach apply. They have the proposal name every attached brief, make `design.md` required for a change that names arch briefs (it is optional in `spec-driven`), carry the Key Decisions with their alternatives into Decisions (a later brief's decision wins; a superseded brief is replaced by the brief it points to), Out of Scope into Non-Goals and Assumptions to Validate into the first tasks, and stop with `/arch:decide [node]` when a Key Decision cannot hold.
+- `operations.apply.guidance` — besides `context:`, the only field arch writes that reaches `/opsx:apply` (rules never do): apply stops and asks for `/opsx:update [change] @[new brief]` when the change's brief was superseded, and points to `/arch:decide [node]` when a task cannot follow a Key Decision instead of implementing around it.
+
+`rules:` and `operations:` are written only for the `spec-driven` schema. Arch owns every entry that mentions `arch brief` and keeps the others. With a store-backed OpenSpec root (a `store:` line in the config), arch writes nothing: it shows the `Settled architecture` line and the rules/operations snippet to add to the store's config (`openspec context` shows which). Ran `openspec init` after finalizing? Run `/arch:finalize` again: with nothing new to brief, it only adds the config.
+
+Implementation progress is never recorded in `.arch/`. `arch.py summary` reads it from `openspec/changes/` (read-only, no CLI needed): a stage is `not started`, `planned` (proposed, no task done), `in progress` or `done` (every change archived) — `unknown` when its brief names no changes or the changes are not local (a store-backed OpenSpec root). `/arch:status` shows each stage's state and the next `/opsx:` command, and lists changes that came from no brief. `/arch:audit openspec` compares each change's `design.md` (its `proposal.md` when it has none) with the Key Decisions and Out of Scope of the brief it came from. `/opsx:verify` (code against the change's artifacts) is optional in OpenSpec's core profile — add it with `openspec config profile`; `/arch:audit openspec` is always available.
+
+`.arch/` keeps why each decision was made; `openspec/specs/` keeps what the system does.
 
 ## Tips
 
@@ -168,7 +185,7 @@ Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one)
 - **Blocking nodes first.** Tech stack, core data model, platform choice — these unblock everything else. Run `/arch:status` to see the dependency chain.
 - **Use deferred honestly.** If an idea won't affect the first implementation pass, mark it deferred. It keeps the map clean and finalization reachable.
 - **Feature briefs don't need to be complete.** If a brief has open technical questions, that's fine — `/opsx:explore` resolves them against the codebase. The brief just needs enough context to start the conversation.
-- **The todo list is a living document.** Update the status column as stages complete. It becomes your project log.
+- **Progress lives in OpenSpec.** Nothing in `.arch/` needs updating as stages ship: propose each change under the name on its brief's `- Changes:` line, and `/arch:status` shows where each stage is and the next command.
 
 ## Permissions
 

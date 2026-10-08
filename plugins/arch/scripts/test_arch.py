@@ -43,6 +43,20 @@ def write(root, rel, text):
         f.write(text)
 
 
+def change(root, rel, tasks=None):
+    """openspec/changes/REL as a directory, with a tasks.md (str or raw bytes) when tasks is given."""
+    path = os.path.join(root, "openspec", "changes", rel)
+    os.makedirs(path, exist_ok=True)
+    if tasks is not None:
+        with open(os.path.join(path, "tasks.md"), "wb") as f:
+            f.write(tasks.encode() if isinstance(tasks, str) else tasks)
+
+
+def brief(changes=None, header="", created="2026-10-01"):
+    return "# Feature Brief: X\n%s%s\n## Goal\nx\n\n## OpenSpec Handoff\n%s- Start with: x\n" % (
+        "_Created: %s via /arch:finalize_\n" % created if created else "", header, "- Changes: %s\n" % changes if changes else "")
+
+
 class ArchTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
@@ -76,6 +90,7 @@ class ArchTest(unittest.TestCase):
         self.assertIn("sync: maturity differs — index 'explored', node file 'raw-idea'", out)
         self.assertIn("unknown slug 'ghost'", out)
         self.assertNotIn(" old ", out.split("PROBLEMS")[0])  # archived node is not a live node
+        self.assertNotIn("STAGES", out)  # no briefs
 
     def test_set_updates_both_copies(self):
         code, out = self.run_cli("set", "sync", "maturity", "explored")
@@ -202,6 +217,49 @@ class ArchTest(unittest.TestCase):
         self.assertIn("BRIEFS_OUTDATED 1\n  02-y.md — stack decide\n", self.run_cli("summary")[1])
         self.run_cli("log", "decide", "y", "--node", "sync")  # 02 does not cover sync, so 01 still answers for it
         self.assertIn("BRIEFS_OUTDATED 2\n  01-x.md — sync decide\n  02-y.md — stack decide\n", self.run_cli("summary")[1])
+
+    def test_stages_from_openspec_changes(self):
+        for name, changes in (("01-a.md", "init"), ("02-b.md", "`add-auth` (backend) → auth-ui; auth-api"),
+                              ("04-d.md", "canvas -> canvas-ui"), ("05-e.md", "setup")):
+            write(self.root, "feature-briefs/" + name, brief(changes))
+        # only the first Changes line inside the handoff counts; an item without a leading change name is skipped
+        write(self.root, "feature-briefs/03-c.md", brief("(tbd), export").replace("## Goal\nx", "## Goal\n- Changes: goal")
+              + "- Changes: later\n")
+        write(self.root, "feature-briefs/06-f.md", brief(created=None))
+        write(self.root, "feature-briefs/00-old.md", brief("old-thing", "_Superseded by: 02-b.md (2026-10-01)_", "2026-09-15"))
+        for rel in ("archive/2026-09-20-init", "archive/2026-10-01-init", "archive/2026-10-02-add-auth", "old-thing",
+                    "archive/2026-10-01-add-setup", "archive/2026-10-03-export", "canvas-ui", "fix-typo", ".tmp",
+                    "archive/2026-10-02-hotfix", "archive/2026-09-25-spike", "archive/2026-09-01-legacy"):
+            change(self.root, rel)
+        with open(os.path.join(self.root, "openspec", "changes", "README.md"), "w") as f:
+            f.write("x")
+        change(self.root, "export", "- [ x] a\n- [~] b\n1. [ ] c\n- [A](https://x)\n* [X] d\n  - [x] nested\n+ [ ] plus\n"
+                                    "2) [ ] paren\n- [ ](x) box\n- [x][ref] link\n")  # OpenSpec 1.14.1 counts 3/8
+        change(self.root, "canvas", "## 1\n- [ ] a\n- []b\n")
+        change(self.root, "auth-api", b"\xef\xbb\xbf- [x] caf\xe9\n- [ ] b\n")  # BOM and a Latin-1 byte
+        code, out = self.run_cli("summary")
+        self.assertEqual(code, 0, out)
+        self.assertIn("READY_NOT_IN_A_BRIEF none\nSTAGES 6\n"
+                      "  01-a.md — done: init archived 2026-10-01\n"
+                      "  02-b.md — in progress: add-auth archived 2026-10-02; auth-ui not proposed; auth-api 1/2 tasks\n"
+                      "  03-c.md — in progress: export 3/8 tasks\n"  # an active change wins over an archived one
+                      "  04-d.md — planned: canvas 0/2 tasks; canvas-ui proposed (no tasks yet)\n"
+                      "  05-e.md — not started: setup not proposed\n"  # 2026-10-01-add-setup is another change
+                      "  06-f.md — unknown: its OpenSpec Handoff names no changes\n"
+                      # only the superseded brief names old-thing; the earliest brief (superseded, 2026-09-15) sets the
+                      # cutoff, so spike counts and legacy predates arch's handoff
+                      "CHANGES_NOT_IN_A_BRIEF fix-typo, old-thing, add-setup (archived 2026-10-01), hotfix (archived 2026-10-02), "
+                      "spike (archived 2026-09-25)\n", out)
+
+    def test_stages_without_local_changes(self):
+        write(self.root, "feature-briefs/01-a.md", brief("init"))
+        _, out = self.run_cli("summary")
+        self.assertIn("STAGES 1 — no openspec/ directory here\n  01-a.md — not started: init not proposed\n", out)
+        self.assertNotIn("CHANGES_NOT_IN_A_BRIEF", out)
+        os.makedirs(os.path.join(self.root, "openspec"))
+        _, out = self.run_cli("summary")
+        self.assertIn("STAGES 1\n  01-a.md — unknown: openspec/changes/ not found (store-backed root?)\n", out)
+        self.assertNotIn("CHANGES_NOT_IN_A_BRIEF", out)
 
     def test_archive_twice_picks_a_free_name(self):
         self.assertEqual(self.run_cli("archive", "sync")[0], 0)
