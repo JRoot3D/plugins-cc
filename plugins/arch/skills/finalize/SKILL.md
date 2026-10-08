@@ -239,7 +239,7 @@ _Arch revision: [revision from Current State]_
 - Enables: [list of later stages that this unlocks]
 
 ## Key Decisions Already Made
-[From the ## Decision sections of covered nodes — rationale included]
+[From the ## Decision sections of covered nodes — rationale included, and each `Boundary:` line from Implications as part of its decision: the code reaches that choice only through the interface it names]
 
 ## Assumptions to Validate
 [The medium- and low-confidence rows from the covered nodes' `## Decision → Assumptions`, each with the Confirmation check that would expose it — implementation should run these checks first]
@@ -302,7 +302,7 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 2. No open questions remain in `## Notes`, and every key question in `## Triage` (if present) is answered or explicitly ruled out of scope
 3. `## Decision → Implications` states the effect on each connected node, or says there is none
 4. Every node it depends on (`dependency` connections that point to it) is `ready`, and no `conflict` connection involves it
-5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early
+5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early or its Implications name a `Boundary:` that keeps the choice replaceable
 
 ---
 

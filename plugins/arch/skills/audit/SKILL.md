@@ -67,6 +67,7 @@ Compare the architecture against a checklist of common concerns. Not all apply t
 - Authentication & authorization
 - Data model & storage
 - API design / contracts
+- Module boundaries & dependency direction (if more than one module or layer) — what may depend on what; core logic not on frameworks, storage or vendors
 - Error handling & resilience
 - Security (input validation, secrets management, OWASP basics)
 - Deployment & infrastructure
@@ -178,6 +179,8 @@ For `decided` and `ready` nodes, assess how hard each decision would be to rever
 
 Flag high-reversal decisions with thin rationale, few alternatives, or weak `Assumptions` / `Confirmation`: load-bearing assumptions at `low` confidence or with no basis, or no measurable way to tell the decision is wrong.
 
+A `Boundary:` line in a decision's Implications makes it cheaper to reverse only while the connected nodes go through it. Flag a decided node that relies on the choice past the boundary — its SDK, types, ids or vendor-specific features.
+
 **Output format:**
 ```
 🔄 REVERSAL RISK
@@ -185,6 +188,11 @@ Flag high-reversal decisions with thin rationale, few alternatives, or weak `Ass
     • "data-model" chose document DB — alternatives section lists only 1 other option
       with a single-sentence dismissal. This is a 10-year decision with 30-second analysis.
       → Consider deeper exploration before this locks in.
+
+  ⚠️  Boundary bypassed:
+    • "payments" sits behind a PaymentGateway interface — but "billing" decided to store
+      Stripe customer ids and handle Stripe webhooks directly. The provider is no longer replaceable in one place.
+      → /arch:decide billing to go through the interface, or drop the boundary from payments.
 
   ✅ High reversal cost — well justified:
     • "tech-stack" chose TypeScript — 3 alternatives compared across 5 criteria. Solid.

@@ -1,6 +1,6 @@
 {
   "name": "arch",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Multi-session architecture exploration workflow — turn raw project ideas into feature briefs for OpenSpec changes",
   "author": {
     "name": "JRoot3D"

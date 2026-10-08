@@ -1,0 +1,51 @@
+{
+  "project": "Ledgerly",
+  "created": "2026-10-08",
+  "last_updated": "2026-10-08",
+  "nodes": [
+    {
+      "slug": "payments",
+      "name": "Payments",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/payments.md",
+      "summary": "Card payments through Stripe behind a PaymentGateway interface."
+    },
+    {
+      "slug": "billing",
+      "name": "Billing",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/billing.md",
+      "summary": "Plans, upgrades, proration and invoices for firm accounts."
+    }
+  ],
+  "connections": [
+    {
+      "from": "payments",
+      "to": "billing",
+      "type": "dependency",
+      "note": "billing builds on the payment provider"
+    }
+  ],
+  "sessions": [
+    {
+      "date": "2026-10-08",
+      "skill": "map",
+      "scope": "full",
+      "summary": "full map"
+    },
+    {
+      "date": "2026-10-08",
+      "skill": "decide",
+      "node": "payments",
+      "summary": "payments ready"
+    },
+    {
+      "date": "2026-10-08",
+      "skill": "decide",
+      "node": "billing",
+      "summary": "billing ready"
+    }
+  ]
+}

@@ -90,6 +90,8 @@ The user should already know the tradeoffs; this step confirms they're all on th
 
 **Evidence, scaled to reversal cost.** High: data store, language, core data model, auth provider, public API shape. Medium: frameworks, API patterns, deployment strategy. Low: libraries, tooling, styling. For facts that change over time — versions, limits, pricing, platform support, licensing — check a current primary source when you have web or docs tools and cite it with its date; otherwise record the fact as an assumption with its confidence. Never present an unchecked fact as settled.
 
+**A boundary lowers the cost.** When a high reversal-cost choice rests on a load-bearing assumption below `high` confidence, or ties the project to one vendor, ask whether the other nodes can use it only through an interface the project owns — a storage port over the database, an adapter over the auth or payment provider's SDK — so replacing it touches one place. If the user wants one, record it as the `Boundary:` line under Implications. Don't propose one for a cheap choice, or for a choice that can't be hidden (the language, the core data model's shape): an interface nothing will swap is pure cost.
+
 ### Step 4 — Confirm the Choice
 Ask explicitly:
 > "What's the decision? State it clearly and I'll document it."
@@ -159,6 +161,7 @@ _Decided: [date]_
 
 ### Implications
 [What this decision enables or constrains in other nodes]
+Boundary: [only when Step 3 chose one — the interface other nodes use instead of this choice, and what it keeps out of them: SDK types, vendor ids, vendor-specific features]
 
 ### Assumptions
 | Assumption | Confidence | Basis |
@@ -185,7 +188,7 @@ A node reaches `ready` when:
 2. No open questions remain in `## Notes`, and every key question in `## Triage` (if present) is answered or explicitly ruled out of scope
 3. `## Decision → Implications` states the effect on each connected node, or says there is none
 4. Every node it depends on (`dependency` connections that point to it) is `ready`, and no `conflict` connection involves it
-5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early
+5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early or its Implications name a `Boundary:` that keeps the choice replaceable
 
 ---
 
