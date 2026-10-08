@@ -2,7 +2,9 @@
 name: map
 description: Maps relationships between architector idea nodes in .arch/ — dependencies, shared concerns, conflicts — records them as connections, and merges or splits nodes on request. Use when the user wants to see how architector nodes depend on or overlap with each other, or to merge or split nodes.
 argument-hint: "[node-a] [node-b]"
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
 ---
 
 # Skill: /arch:map
@@ -32,14 +34,13 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py <command>` — one command per Bash call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.py …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 ---
 
@@ -106,12 +107,12 @@ After presenting the map, ask:
 
 If yes — for each identified relationship:
 - Add to `## Connections` in the relevant node files
-- Add to `index.json` with `arch.py connect FROM TO TYPE "note"` — TYPE is `dependency`, `shared-concern` or `conflict`; for `dependency`, FROM is the prerequisite that must be decided before TO; re-running it updates the note. Example:
-  `arch.py connect tech-stack data-model dependency "data model choices depend on DB selected in tech-stack"`
-- Remove connections that no longer hold with `arch.py disconnect FROM TO [TYPE]`
+- Add to `index.json` with `arch.mjs connect FROM TO TYPE "note"` — TYPE is `dependency`, `shared-concern` or `conflict`; for `dependency`, FROM is the prerequisite that must be decided before TO; re-running it updates the note. Example:
+  `arch.mjs connect tech-stack data-model dependency "data model choices depend on DB selected in tech-stack"`
+- Remove connections that no longer hold with `arch.mjs disconnect FROM TO [TYPE]`
   and update or remove their lines in `## Connections` of the node files
 
-Then add a History line to each changed node and log the run: a full map (no node arguments) with `arch.py log map "[N] connections added, [N] updated" --full`; a node or compare run with `--node` for each node it covered and no `--full`. Then `arch.py check`.
+Then add a History line to each changed node and log the run: a full map (no node arguments) with `arch.mjs log map "[N] connections added, [N] updated" --full`; a node or compare run with `--node` for each node it covered and no `--full`. Then `arch.mjs check`.
 
 Only a `--full` entry marks the whole graph fresh for other skills — log a full run with `--full` even when only a few connections changed, and never pass it on a partial run.
 
@@ -136,11 +137,11 @@ When the user wants to act on a merge or split suggestion:
    - Priority: the higher of the two (blocking > core > extension > deferred)
    - Maturity: the lower of the two (raw-idea < explored < decided < ready), but at most `explored` unless the kept node's `## Decision` still covers the whole merged scope unchanged. If the kept node lands below `decided`, retitle its `## Decision` to `## Previous Decision (merged [date])`. Move every other decision under `## Notes` as `Previous decision ([slug])` and suggest `/arch:decide` on the merged node
 4. Register the result:
-   - New slug: `arch.py add-node [merged-slug] "[Name]" [priority] "[summary]"`, then `arch.py set [merged-slug] maturity [level]` if it is not `raw-idea`. Archive both sources: `arch.py archive [node-a]`, `arch.py archive [node-b]` (renames them to `[slug].archived.md`)
-   - Kept slug: `arch.py set [kept] priority|maturity|name|summary …` for whatever changed. Archive only the absorbed node — never the kept one
-5. Repoint the archived nodes' connections: `arch.py rename [archived-slug] [merged-slug]` for each (drops duplicates and self-links)
+   - New slug: `arch.mjs add-node [merged-slug] "[Name]" [priority] "[summary]"`, then `arch.mjs set [merged-slug] maturity [level]` if it is not `raw-idea`. Archive both sources: `arch.mjs archive [node-a]`, `arch.mjs archive [node-b]` (renames them to `[slug].archived.md`)
+   - Kept slug: `arch.mjs set [kept] priority|maturity|name|summary …` for whatever changed. Archive only the absorbed node — never the kept one
+5. Repoint the archived nodes' connections: `arch.mjs rename [archived-slug] [merged-slug]` for each (drops duplicates and self-links)
 6. Repoint the same connections in the `## Connections` sections of other nodes
-7. `arch.py log map "merged [node-a] + [node-b]" --node [merged-slug]`, then `arch.py check`
+7. `arch.mjs log map "merged [node-a] + [node-b]" --node [merged-slug]`, then `arch.mjs check`
 
 **Split flow:**
 1. Show the node and the two identified concerns
@@ -148,17 +149,17 @@ When the user wants to act on a merge or split suggestion:
 3. Write the parts — a new node file for each new part; a part that keeps the original slug is the original file edited in place. Distribute existing notes appropriately. Add a history entry to each: `- [date] /arch:map — split from [original-node]; [one-line: what this half covers]`
    - Priority: inherited from the source node
    - Maturity: `raw-idea` if the source was `raw-idea`, otherwise `explored`. Copy the relevant part of any `## Decision` into `## Notes` and suggest `/arch:decide` for each part
-4. Register each new part with `arch.py add-node` (and `arch.py set … maturity explored` where needed). If no part kept the original slug, `arch.py archive [original-node]`; if one did, `arch.py set [original-node] maturity explored` when it was further along (retitle its `## Decision` to `## Previous Decision (split [date])`), and never archive it
-5. Reassign each connection of the source node to the part it belongs to (ask the user when unclear). Original archived: `arch.py rename [original-node] [part-a]` moves all of them to part A. Then move the other part's connections with `arch.py disconnect` + `arch.py connect`
+4. Register each new part with `arch.mjs add-node` (and `arch.mjs set … maturity explored` where needed). If no part kept the original slug, `arch.mjs archive [original-node]`; if one did, `arch.mjs set [original-node] maturity explored` when it was further along (retitle its `## Decision` to `## Previous Decision (split [date])`), and never archive it
+5. Reassign each connection of the source node to the part it belongs to (ask the user when unclear). Original archived: `arch.mjs rename [original-node] [part-a]` moves all of them to part A. Then move the other part's connections with `arch.mjs disconnect` + `arch.mjs connect`
 6. Update the `## Connections` sections of other nodes the same way
-7. `arch.py log map "split [original-node]" --node [part-a] --node [part-b]`, then `arch.py check`
+7. `arch.mjs log map "split [original-node]" --node [part-a] --node [part-b]`, then `arch.mjs check`
 
 ---
 
 ## Rules
-- Change maturity and priority only with `arch.py set` (it updates the node file and `index.json` together); pair every `arch.py connect` / `disconnect` with the matching line in the node files' `## Connections`
+- Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
 - Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.py log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.py check`
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - /arch:map never makes decisions — it surfaces information
 - Do not update connections without user confirmation

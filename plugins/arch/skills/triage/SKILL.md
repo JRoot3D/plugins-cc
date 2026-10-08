@@ -2,7 +2,9 @@
 name: triage
 description: Enriches raw-idea nodes in an architector session (.arch/) with expert discussion points, hidden concerns, gotchas and the key questions to answer before deciding. Use after /arch:new, or when the user wants expert preparation for exploring architector nodes.
 argument-hint: "[node-slug]"
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
 ---
 
 # Skill: /arch:triage
@@ -37,14 +39,13 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py <command>` — one command per Bash call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.py …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 ---
 
@@ -149,7 +150,7 @@ Questions to answer before this node can move to `decided`:
 
 After seeding:
 - Add a History line to each seeded node file: `- [date] /arch:triage — seeded [N] discussion points; key insight: [one line]`
-- Log it: `arch.py log triage "Triaged [N] nodes — seeded discussion points and expert questions" --node [slug] ...`, then `arch.py check`
+- Log it: `arch.mjs log triage "Triaged [N] nodes — seeded discussion points and expert questions" --node [slug] ...`, then `arch.mjs check`
 
 If triage revealed that a node's priority seems wrong, **suggest but do not change**:
 > "Priority suggestion: '[node]' is currently `core` but it blocks decisions in 3 other nodes.
@@ -197,9 +198,9 @@ Use `project-context.md` and the user's language in the node descriptions to gau
 ---
 
 ## Rules
-- Change maturity and priority only with `arch.py set` (it updates the node file and `index.json` together); pair every `arch.py connect` / `disconnect` with the matching line in the node files' `## Connections`
+- Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
 - Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.py log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.py check`
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Do not change node maturity — triage enriches, it does not advance
 - Do not make decisions or recommend specific approaches — present the landscape

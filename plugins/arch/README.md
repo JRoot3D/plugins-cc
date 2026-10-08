@@ -5,7 +5,9 @@ implementation-ready feature briefs, each the input for [OpenSpec](https://githu
 
 ## Requirements
 
-`python3` 3.8+ on PATH. `scripts/arch.py` (standard library only) owns `.arch/index.json`; without it the skills stop and say so.
+Node.js 18+ (`node`) on PATH — the native Claude Code installer does not ship it. `scripts/arch.mjs` (standard library only) owns `.arch/index.json`; without `node` every skill stops at start with Claude Code's `Shell command failed` error.
+
+macOS, Linux and Windows work the same way: the skills call the script with a command that both Bash and PowerShell run, so Git for Windows is optional, and a home directory with spaces in its path is fine.
 
 For the handoff after `/arch:finalize`: the OpenSpec CLI (`npm install -g @fission-ai/openspec`) and `openspec init` in the project. The arch skills themselves don't need it.
 
@@ -79,7 +81,7 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 
 ## Graph Pane
 
-`/arch-graph` opens a side pane with the dependency graph from `.arch/index.json`: nodes grouped into layers by dependency depth (layer 0 has no prerequisites), each with its maturity symbol, priority and `← prerequisites`; nodes caught in a dependency cycle under `cycle`; then shared concerns (`↔`) and conflicts (`⚡`). Press a node (click it, or ctrl+x tab into the pane and Enter) to run `/arch:explore` on it — queued until the current turn ends. It redraws after every `arch.py` call, so it follows `/arch:map`, `/arch:decide` and the rest live. In a fullscreen terminal 144+ columns wide it opens by itself when the project has an `.arch/index.json`; run `/arch-graph` again to refresh after editing the index by hand.
+`/arch-graph` opens a side pane with the dependency graph from `.arch/index.json`: nodes grouped into layers by dependency depth (layer 0 has no prerequisites), each with its maturity symbol, priority and `← prerequisites`; nodes caught in a dependency cycle under `cycle`; then shared concerns (`↔`) and conflicts (`⚡`). Press a node (click it, or ctrl+x tab into the pane and Enter) to run `/arch:explore` on it — queued until the current turn ends. It redraws after every `arch.mjs` call, so it follows `/arch:map`, `/arch:decide` and the rest live. In a fullscreen terminal 144+ columns wide it opens by itself when the project has an `.arch/index.json`; run `/arch-graph` again to refresh after editing the index by hand.
 
 ## Idea Node Maturity
 
@@ -109,7 +111,7 @@ Maturity is advanced by:
 | `extension` | Valuable but not required for first implementation pass |
 | `deferred` | Consciously set aside — will not appear in todo list |
 
-**Gate rule:** `/arch:finalize` requires all `blocking` nodes to be at `ready` and `arch.py check` to report no problems — a `decided`/`ready` node without a `## Decision`, an open conflict on a decided node, a dependency cycle, or a `ready` node whose prerequisite is not. It then re-checks each node's readiness criteria before writing its brief.
+**Gate rule:** `/arch:finalize` requires all `blocking` nodes to be at `ready` and `arch.mjs check` to report no problems — a `decided`/`ready` node without a `## Decision`, an open conflict on a decided node, a dependency cycle, or a `ready` node whose prerequisite is not. It then re-checks each node's readiness criteria before writing its brief.
 Non-blocking nodes that aren't ready are flagged but do not block finalization.
 
 ## Decision Records and Briefs
@@ -178,7 +180,7 @@ Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one)
 
 `rules:` and `operations:` are written only for the `spec-driven` schema. Arch owns every entry that mentions `arch brief` and keeps the others. With a store-backed OpenSpec root (a `store:` line in the config), arch writes nothing: it shows the `Settled architecture` line and the rules/operations snippet to add to the store's config (`openspec context` shows which). Ran `openspec init` after finalizing? Run `/arch:finalize` again: with nothing new to brief, it only adds the config.
 
-Implementation progress is never recorded in `.arch/`. `arch.py summary` reads it from `openspec/changes/` (read-only, no CLI needed): a stage is `not started`, `planned` (proposed, no task done), `in progress` or `done` (every change archived) — `unknown` when its brief names no changes or the changes are not local (a store-backed OpenSpec root). `/arch:status` shows each stage's state and the next `/opsx:` command, and lists changes that came from no brief. `/arch:audit openspec` compares each change's `design.md` (its `proposal.md` when it has none) with the Key Decisions and Out of Scope of the brief it came from. `/opsx:verify` (code against the change's artifacts) is optional in OpenSpec's core profile — add it with `openspec config profile`; `/arch:audit openspec` is always available.
+Implementation progress is never recorded in `.arch/`. `arch.mjs summary` reads it from `openspec/changes/` (read-only, no CLI needed): a stage is `not started`, `planned` (proposed, no task done), `in progress` or `done` (every change archived) — `unknown` when its brief names no changes or the changes are not local (a store-backed OpenSpec root). `/arch:status` shows each stage's state and the next `/opsx:` command, and lists changes that came from no brief. `/arch:audit openspec` compares each change's `design.md` (its `proposal.md` when it has none) with the Key Decisions and Out of Scope of the brief it came from. `/opsx:verify` (code against the change's artifacts) is optional in OpenSpec's core profile — add it with `openspec config profile`; `/arch:audit openspec` is always available.
 
 `.arch/` keeps why each decision was made; `openspec/specs/` keeps what the system does.
 
@@ -193,21 +195,23 @@ Implementation progress is never recorded in `.arch/`. `arch.py summary` reads i
 
 ## Permissions
 
-Each skill reads the current state through `scripts/arch.py summary` when it starts; that call is pre-approved and needs nothing from you. Writes to `.arch/index.json` also go through `arch.py`, but they happen after you confirm, in a later turn, where Claude Code asks for approval. To approve them once for good, add the rule for your install to `permissions.allow` in your settings. The skills call the script through `${CLAUDE_PLUGIN_ROOT}`, which expands to an absolute path, so the rule names the absolute path too — that way it approves only this plugin's script, not an `arch.py` inside a repository you open.
+Each skill reads the current state through `scripts/arch.mjs summary` when it starts; that call is pre-approved and needs nothing from you. Writes to `.arch/index.json` also go through `arch.mjs`, but they happen after you confirm, in a later turn, where Claude Code asks for approval. To approve them once for good, add the rule for your install to `permissions.allow` in your settings. The skills call the script through `${CLAUDE_PLUGIN_ROOT}`, which expands to an absolute path (with forward slashes on Windows), so the rule names the absolute path too — that way it approves only this plugin's script, not an `arch.mjs` inside a repository you open. Keep the quotes around the path: the skills write it quoted. On Windows add the `PowerShell(…)` rule as well — Claude Code runs commands through PowerShell when Git Bash is missing, and by default even when it is installed.
 
-Installed plugin (replace `/Users/you` with your home directory; `*` matches any plugin version):
+Installed plugin (replace `/Users/you` with your home directory, e.g. `C:/Users/you` on Windows; `*` matches any plugin version):
 
 ```json
-"Bash(python3 /Users/you/.claude/plugins/cache/plugins-cc/arch/*/scripts/arch.py *)"
+"Bash(node \"/Users/you/.claude/plugins/cache/plugins-cc/arch/*/scripts/arch.mjs\" *)",
+"PowerShell(node \"/Users/you/.claude/plugins/cache/plugins-cc/arch/*/scripts/arch.mjs\" *)"
 ```
 
 `--plugin-dir` checkout (use the checkout's absolute path):
 
 ```json
-"Bash(python3 /absolute/path/to/plugins-cc/plugins/arch/scripts/arch.py *)"
+"Bash(node \"/absolute/path/to/plugins-cc/plugins/arch/scripts/arch.mjs\" *)",
+"PowerShell(node \"/absolute/path/to/plugins-cc/plugins/arch/scripts/arch.mjs\" *)"
 ```
 
-If you decline a write, the skill stops and tells you which change was not recorded — it never edits `index.json` itself. `arch.py check` (run by the skills after every write) reports anything left inconsistent.
+If you decline a write, the skill stops and tells you which change was not recorded — it never edits `index.json` itself. `arch.mjs check` (run by the skills after every write) reports anything left inconsistent.
 
 ## Development
 
@@ -217,15 +221,15 @@ To work on the skills themselves, from the repository root:
 claude --plugin-dir plugins/arch
 ```
 
-Each skill is self-contained in `skills/<name>/SKILL.md` — outside auto mode, reading other plugin files at runtime triggers a permission prompt, so shared rules (index schema, write rules) are repeated where they are needed; keep them in sync when changing one. `hooks/register.tsx` is the graph pane (a hooks-module mod, read-only on `.arch/index.json`): check it with `claude plugin validate plugins/arch` and `claude plugin test plugins/arch` (tests in `tests/`); `.claude-plugin/types/` is written by the engine on load and gitignored. `scripts/arch.py` (Python 3.8+, standard library) owns `.arch/index.json`: skills inject its `summary` at start and change the index only through its commands, so counts, dates and the node-file/index copies stay consistent. Tests: `python3 plugins/arch/scripts/test_arch.py` — they also fail when a line shared between skills drifts or goes missing.
+Each skill is self-contained in `skills/<name>/SKILL.md` — outside auto mode, reading other plugin files at runtime triggers a permission prompt, so shared rules (index schema, write rules) are repeated where they are needed; keep them in sync when changing one. `hooks/register.tsx` is the graph pane (a hooks-module mod, read-only on `.arch/index.json`): check it with `claude plugin validate plugins/arch` and `claude plugin test plugins/arch` (tests in `tests/`); `.claude-plugin/types/` is written by the engine on load and gitignored. `scripts/arch.mjs` (Node.js 18+, standard library) owns `.arch/index.json`: skills inject its `summary` at start and change the index only through its commands, so counts, dates and the node-file/index copies stay consistent. Tests: `node plugins/arch/scripts/test_arch.mjs` — they also fail when a line shared between skills drifts or goes missing.
 
 Behaviour evals (`evals/`, [plugin evals](https://code.claude.com/docs/en/plugin-evals)) run the real skills on seeded boards: an all-`ready` board with contradictory decisions (`/arch:audit` must still catch it), a node whose decision reaches past another node's `Boundary:` (`/arch:audit` must flag the bypass), a structurally clean board with an open question (`/arch:finalize` must stop), and a merge of two `ready` nodes (the result must not stay `ready`). From `plugins/arch`:
 
 ```bash
-claude plugin eval . --scaffold --ablation none --allow-tools Write Edit "Bash(python3 *)"
+claude plugin eval . --scaffold --ablation none --allow-tools Write Edit "Bash(node *)"
 ```
 
-Every run is a real model call (about $3 for the suite at 3 runs per case). `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.py` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills, otherwise installed users keep the cached copy.
+Every run is a real model call (about $3 for the suite at 3 runs per case). `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.mjs` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills, otherwise installed users keep the cached copy.
 
 ## Credits
 

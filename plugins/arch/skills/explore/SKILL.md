@@ -2,7 +2,9 @@
 name: explore
 description: Continues an architector session in .arch/ — shows the node dashboard and what changed since the last session, then deepens one idea node through open discussion without locking in decisions. Use when the user wants to work through or discuss architector idea nodes.
 argument-hint: "[node-slug]"
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
 ---
 
 # Skill: /arch:explore
@@ -31,14 +33,13 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py <command>` — one command per Bash call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.py …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 ---
 
@@ -138,11 +139,11 @@ After the discussion reaches a natural pause point, ask:
 If yes — update the node file:
 - Add new information to `## Notes`
 - Update `## Connections` if links to other nodes emerged
-- Change maturity from `raw-idea` to `explored` with `arch.py set [slug] maturity explored` (other maturities stay as they are)
+- Change maturity from `raw-idea` to `explored` with `arch.mjs set [slug] maturity explored` (other maturities stay as they are)
 - Add a session entry to `## History` — include a one-line summary of the *substance* of the exploration: what was discovered, what shifted, what new question emerged. Not just "explored via /arch:explore" but the thinking delta. Example:
   `- 2026-04-12 /arch:explore — discovered offline-first conflicts with cloud-sync; leaning toward CRDT but merge semantics still open`
 
-Record new links with `arch.py connect FROM TO TYPE "note"`, then `arch.py log explore "[the thinking delta]" --node [slug]` and `arch.py check`.
+Record new links with `arch.mjs connect FROM TO TYPE "note"`, then `arch.mjs log explore "[the thinking delta]" --node [slug]` and `arch.mjs check`.
 
 ### Step 6 — Offer Next Step
 After updating, offer options:
@@ -165,9 +166,9 @@ The user can say at any point:
 ---
 
 ## Rules
-- Change maturity and priority only with `arch.py set` (it updates the node file and `index.json` together); pair every `arch.py connect` / `disconnect` with the matching line in the node files' `## Connections`
+- Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
 - Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.py log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.py check`
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Never skip the dashboard — it orients every session
 - Never change maturity to `decided` or `ready` — that requires explicit /arch:decide

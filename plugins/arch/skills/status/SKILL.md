@@ -3,7 +3,9 @@ name: status
 description: Read-only progress report for an architector session in .arch/ — node maturity counts, blocking nodes, open questions, map freshness, what remains before /arch:finalize and the implementation progress of the feature briefs in OpenSpec. Use when the user asks where the architecture work stands, what blocks finalization, or how implementation of the feature briefs is going.
 argument-hint: "[blocking|ready]"
 disallowed-tools: [Write, Edit, NotebookEdit]
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary)
 ---
 
 # Skill: /arch:status
@@ -33,10 +35,9 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 

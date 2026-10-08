@@ -2,7 +2,9 @@
 name: decide
 description: Records an architecture decision for one idea node in .arch/ — chosen approach, alternatives and rationale — and moves the node to decided, then to ready once its open questions are resolved. Also revisits earlier decisions and changes node priority. Use when the user is ready to commit to a direction for an architector node.
 argument-hint: "[node-slug] [priority <level>]"
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
 ---
 
 # Skill: /arch:decide
@@ -40,19 +42,18 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 
 - Option 1 → go to Step 6.
 - Option 2 → run Steps 1–7. In Step 5, retitle the current section to `## Previous Decision (superseded [date])` and write the new `## Decision` above it — decision records are superseded, not erased — set maturity to `decided`, and name the previous choice in the History line.
-- Option 3 → `arch.py set [slug] maturity explored`, keep the `## Decision` section but retitle it `## Previous Decision (reopened [date])`, add a History line with the reason, `arch.py log decide "reopened: [reason]" --node [slug]`, then suggest `/arch:explore [node]`.
+- Option 3 → `arch.mjs set [slug] maturity explored`, keep the `## Decision` section but retitle it `## Previous Decision (reopened [date])`, add a History line with the reason, `arch.mjs log decide "reopened: [reason]" --node [slug]`, then suggest `/arch:explore [node]`.
 
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py <command>` — one command per Bash call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.py …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 ---
 
@@ -99,19 +100,19 @@ Ask explicitly:
 Wait for the user's answer. Do not infer or assume.
 
 ### Step 5 — Document
-Update the node file first — `arch.py set … decided` refuses a file without `## Decision`:
+Update the node file first — `arch.mjs set … decided` refuses a file without `## Decision`:
 - Replace or expand `## Description` with the decided approach
 - Add the `## Decision` section from the template below (on a revisit, see Option 2), with Assumptions and Confirmation scaled to the reversal cost
-- If a `conflict` connection involves this node, the decision must resolve it: say how under Implications, remove it with `arch.py disconnect FROM TO conflict` and drop its `## Connections` line — `check` reports an open conflict on a decided node
+- If a `conflict` connection involves this node, the decision must resolve it: say how under Implications, remove it with `arch.mjs disconnect FROM TO conflict` and drop its `## Connections` line — `check` reports an open conflict on a decided node
 - Add session entry to `## History` — include a one-line summary of *what was decided and why*. Not just "decided via /arch:decide" but the substance. Example:
   `- 2026-04-14 /arch:decide — chose PostgreSQL over MongoDB; relational integrity outweighs schema flexibility for this use case`
 
-Then `arch.py set [slug] maturity decided` (node file and `index.json` together), `arch.py log decide "[what was decided]" --node [slug]`, and `arch.py set [slug] summary "[new one-line summary]"` if the description changed.
+Then `arch.mjs set [slug] maturity decided` (node file and `index.json` together), `arch.mjs log decide "[what was decided]" --node [slug]`, and `arch.mjs set [slug] summary "[new one-line summary]"` if the description changed.
 
 ### Step 6 — Readiness Check
 Check the node against the readiness criteria in "Maturity progression rules" below.
 
-- **All met** → ask: "[node] meets the criteria for `ready`. Mark it ready?" On yes, run `arch.py set [slug] maturity ready`, add a History line, and `arch.py log decide "[node] ready" --node [slug]` unless Step 5 already logged this run.
+- **All met** → ask: "[node] meets the criteria for `ready`. Mark it ready?" On yes, run `arch.mjs set [slug] maturity ready`, add a History line, and `arch.mjs log decide "[node] ready" --node [slug]` unless Step 5 already logged this run.
 - **Some missing** → list exactly what is missing (e.g. the open question text) and leave the node at `decided`. Resolving them later and re-running `/arch:decide [node]` brings it to `ready`.
 
 ### Step 7 — Check for Cascades
@@ -134,7 +135,7 @@ If a connected node is `decided` or `ready` and this decision contradicts it, sa
 ## Priority Change
 `/arch:decide [node] priority [blocking|core|extension|deferred]`, or the user asks to change a node's priority:
 1. Show the current priority and what the change means (e.g. a new `blocking` node must reach `ready` before finalize).
-2. On confirmation, run `arch.py set [slug] priority [level]` (node file and `index.json`), add a History line with the reason, and `arch.py log decide "priority [old] → [new]: [reason]" --node [slug]`.
+2. On confirmation, run `arch.mjs set [slug] priority [level]` (node file and `index.json`), add a History line with the reason, and `arch.mjs log decide "priority [old] → [new]: [reason]" --node [slug]`.
 3. Do not change maturity and do not run the decision steps.
 
 ---
@@ -193,9 +194,9 @@ A node reaches `ready` when:
 ---
 
 ## Rules
-- Change maturity and priority only with `arch.py set` (it updates the node file and `index.json` together); pair every `arch.py connect` / `disconnect` with the matching line in the node files' `## Connections`
+- Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
 - Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.py log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.py check`
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Never decide on behalf of the user — always wait for explicit confirmation in Step 4
 - If the user says "just pick the best one" — provide a clear recommendation with rationale, but still ask for confirmation

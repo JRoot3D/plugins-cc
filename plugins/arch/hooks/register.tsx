@@ -50,10 +50,10 @@ export const register: Register = on => {
     return { text: 'Arch graph pane opened.' }
   })
 
-  // Every write to index.json goes through arch.py.
-  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+  // Every write to index.json goes through arch.mjs, from Bash or PowerShell.
+  on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if (e.command.includes('arch.py')) $.ui.invalidate('ui.render')
+    if ('command' in e && String(e.command).includes('arch.mjs')) $.ui.invalidate('ui.render')
 
     return result
   })
@@ -73,7 +73,7 @@ export const register: Register = on => {
 
     const nodes = Array.isArray(index?.nodes) ? [...index.nodes].sort((a, b) => rank(a) - rank(b) || a.slug.localeCompare(b.slug)) : []
     const live = new Set(nodes.map(n => n.slug))
-    // connections to unknown slugs are left to `arch.py check`
+    // connections to unknown slugs are left to `arch.mjs check`
     const links = (Array.isArray(index?.connections) ? index.connections : []).filter(c => live.has(c.from) && live.has(c.to))
     const prereqs = new Map<string, string[]>()
     for (const c of links) if (c.type === 'dependency') prereqs.set(c.to, [...(prereqs.get(c.to) ?? []), c.from])

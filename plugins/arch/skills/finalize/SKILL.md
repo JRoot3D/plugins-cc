@@ -2,7 +2,9 @@
 name: finalize
 description: Ends an architector session — turns ready idea nodes from .arch/ into numbered feature briefs, each the input for OpenSpec changes, and a todo list; on later runs appends new stages without touching existing ones.
 disable-model-invocation: true
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py *)
+allowed-tools:
+  - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
+  - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
 ---
 
 # Skill: /arch:finalize
@@ -57,11 +59,11 @@ Before proceeding, verify:
    >
    > Now that the architecture is clearer, should any of these move to `core` or `extension` before finalizing?
    > (They can always be added in a future run — this is your last chance to include them in this batch.)"
-   Wait for confirmation. If the user promotes a node, run `arch.py set [slug] priority [level]` and add a History line. It must still go through `/arch:explore` and `/arch:decide` before it can be included — remind them of this and pause finalization if needed.
+   Wait for confirmation. If the user promotes a node, run `arch.mjs set [slug] priority [level]` and add a History line. It must still go through `/arch:explore` and `/arch:decide` before it can be included — remind them of this and pause finalization if needed.
 
 5. **Earlier briefs** (`BRIEFS` in Current State, on any run after the first):
    - New stages group only `READY_NOT_IN_A_BRIEF` nodes (plus the nodes of briefs superseded below), are numbered after the highest existing `NN`, and use slugs that differ from existing ones.
-   - **Changes line corrections** — handle these before the choices below; they touch no decisions, so they also run while the gate is closed. After the user confirms a correction, rewrite that brief's `- Changes:` line, then run `arch.py summary` again and use its `STAGES` below.
+   - **Changes line corrections** — handle these before the choices below; they touch no decisions, so they also run while the gate is closed. After the user confirms a correction, rewrite that brief's `- Changes:` line, then run `arch.mjs summary` again and use its `STAGES` below.
      - For each change in `CHANGES_NOT_IN_A_BRIEF`, read its `proposal.md` (`openspec/changes/[change]/`, or `openspec/changes/archive/[date]-[change]/` when archived). If it names a brief, show that brief's `- Changes:` line and offer to put the change's name on it: ask whether it is one of the listed changes proposed under another name, or whether listed changes were merged, split or dropped. If the brief it names is marked `_Superseded by:_`, use the brief that mark points to instead, and tell the user to revise the change from it (`/opsx:update [change] @.arch/feature-briefs/[that brief]`) unless it already has tasks done.
      - For each `STAGES` line where a `not proposed` change sits next to a sibling that is archived or has tasks done, ask whether that change is still planned, merged into another change, or dropped; remove it from `- Changes:` only after the user confirms it was merged or dropped.
    - For each brief in `BRIEFS_OUTDATED`, show what changed since its `_Arch revision:_` (the listed nodes' History lines and current decisions) and its `STAGES` state, and ask the user to choose between the options that state allows:
@@ -81,14 +83,13 @@ Before proceeding, verify:
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py summary 2>&1 || echo STATE_SCRIPT_FAILED`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" summary`
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
-- `STATE_SCRIPT_FAILED` → stop and show the user the error above it. architector requires `python3` 3.8+ on PATH.
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/arch.py <command>` — one command per Bash call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.py …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write, fix what it reports and run it again until it is clean. Never edit `index.json` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 ---
 
@@ -151,7 +152,7 @@ Write `.arch/todo-list.md` using the todo list template. On a later run, add the
 
 A todo list written before 3.1 has a Status column: keep the column, put `—` in it for new rows and leave its existing cells as they are. If it still has the old `Status:` legend, replace that legend with the template's progress line and its "Update the stage's Status here" step with the template's `/arch:status` step — a one-time update.
 
-Then `arch.py log finalize "Stages [NN–NN] written: [names]"`.
+Then `arch.mjs log finalize "Stages [NN–NN] written: [names]"`.
 
 ### Step 4 — OpenSpec Config
 The config is `openspec/config.yaml`, or legacy `openspec/config.yml` when `config.yaml` is absent. Without `openspec/`, or when it has neither file, skip this step — Notify covers both.
@@ -307,14 +308,14 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 ---
 
 ## Rules
-- Change maturity and priority only with `arch.py set` (it updates the node file and `index.json` together); pair every `arch.py connect` / `disconnect` with the matching line in the node files' `## Connections`
+- Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
 - Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.py log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.py check`
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Outside `.arch/`, write only `context:`, `rules:` and `operations:` in `openspec/config.yaml` (or `config.yml`), after the user confirms
-- Write nothing while the gate is closed (except Changes line corrections, recorded with `arch.py log finalize "Changes line corrected: [brief]"`) or a readiness re-check fails
+- Write nothing while the gate is closed (except Changes line corrections, recorded with `arch.mjs log finalize "Changes line corrected: [brief]"`) or a readiness re-check fails
 - Existing briefs and todo-list rows are never rewritten — later runs append; the only edits are those listed in Gate Check 5
 - Do not invent stage groupings without user confirmation
 - Feature briefs must accurately reflect decisions from node files — do not add new decisions
 - Open technical questions in briefs must be genuinely open — do not fill them with guesses
-- Implementation progress is never recorded in `.arch/` — `arch.py summary` reads it from `openspec/changes/`
+- Implementation progress is never recorded in `.arch/` — `arch.mjs summary` reads it from `openspec/changes/`
