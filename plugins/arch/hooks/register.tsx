@@ -9,6 +9,12 @@ type Node = { slug: string; priority?: string; maturity?: string }
 type Link = { from: string; to: string; type: string }
 type Index = { project?: string; nodes?: Node[]; connections?: Link[] }
 
+// A file under .arch/, on any platform's separators
+const ARCH_FILE = /(^|[\\/])\.arch[\\/]/
+// summary's and sync's lock report: the header and its indented lines
+const LOCKS = /^LOCKS shared via .*(?:\r?\n {2}.*)*/m
+const SHARING = /arch\.mjs"?\s+(share|claim|release|unlock)\b/
+
 const fit = (text: string, width: number) => (text.length > width ? `${text.slice(0, width - 1)}…` : text)
 const rank = (n: Node) => {
   const i = PRIORITY.indexOf(n.priority ?? '')
@@ -18,6 +24,23 @@ const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: 'Arch graph' }
 // Not awaited by the Button: the skill is queued and runs once the session is idle.
 const explore = ($: EngineInterface, slug: string) => {
   void $.command.run({ command: 'arch:explore', args: slug }).catch(err => $.ui.toast(`/arch:explore failed: ${err}`))
+}
+
+const arch = ($: EngineInterface, ...args: string[]) => $.process.run(['node', `${$.plugin.root}/scripts/arch.mjs`, ...args])
+
+// Fetches refs/arch/locks (a shared board's locks) and shows the ones you hold; resolves the LOCKS block, if shared.
+const sync = async ($: EngineInterface) => {
+  const block = LOCKS.exec((await arch($, 'sync')).stdout)?.[0]
+  const mine = (block ?? '').split(/\r?\n/).flatMap(line => /^ {2}(\S+) — yours/.exec(line)?.[1] ?? [])
+  $.ui.status(mine.length ? `arch: holding ${mine.join(', ')}` : undefined)
+  return block
+}
+
+// The reason a lock keeps you from editing file, or undefined
+const locked = async ($: EngineInterface, file: string) => {
+  if (!ARCH_FILE.test(file)) return undefined
+  const { exitCode, stdout, stderr } = await arch($, 'can-edit', file)
+  return exitCode === 0 ? undefined : `${$.plugin.name}: ${(stderr || stdout).replace(/^ERROR: /, '').trim()}`
 }
 
 // Dependency depth: 0 without prerequisites, else one past the deepest. Nodes in or behind a cycle never settle.
@@ -38,7 +61,11 @@ const levels = (slugs: string[], prereqs: Map<string, string[]>) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'arch-graph', description: 'Show the arch dependency graph (.arch/index.json) in a pane' })
-    if (await $.fs.exists(INDEX)) void open($)
+    await $.command.register({ name: 'arch-share', description: 'Share this arch board through git: per-node locks on refs/arch/locks' })
+    if (await $.fs.exists(INDEX)) {
+      void open($)
+      void sync($).catch(() => undefined)
+    }
 
     return next(e)
   })
@@ -50,10 +77,40 @@ export const register: Register = on => {
     return { text: 'Arch graph pane opened.' }
   })
 
+  on('command.run', { command: 'arch-share' }, async $ => {
+    const { exitCode, stdout, stderr } = await arch($, 'share')
+    if (exitCode === 0) await sync($)
+
+    return { text: (exitCode === 0 ? stdout : stderr).trim() }
+  })
+
+  // A skill's Current State shows the locks as last fetched: fetch them now and put the fresh block in its place.
+  on('skill.prompt', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.skill.startsWith('arch:') || !(await $.fs.exists(INDEX))) return result
+    const fresh = await sync($).catch(() => undefined)
+    if (fresh === undefined) return result
+
+    return { text: LOCKS.test(result.text) ? result.text.replace(LOCKS, fresh) : `${result.text}\n\nLocks fetched just now:\n${fresh}` }
+  })
+
+  // On a shared board a node's file is edited only under your lock; arch.mjs set/add-node/archive check it themselves.
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
+    const deny = await locked($, e.file_path)
+    return deny === undefined ? next(e) : { deny }
+  }).catch(($, e, next) => next(e))
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    const deny = await locked($, e.file_path)
+    return deny === undefined ? next(e) : { deny }
+  }).catch(($, e, next) => next(e))
+
   // Every write to index.json goes through arch.mjs, from Bash or PowerShell.
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if ('command' in e && String(e.command).includes('arch.mjs')) $.ui.invalidate('ui.render')
+    if ('command' in e && String(e.command).includes('arch.mjs')) {
+      $.ui.invalidate('ui.render')
+      if (SHARING.test(String(e.command))) void sync($).catch(() => undefined)
+    }
 
     return result
   })

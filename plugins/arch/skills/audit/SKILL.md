@@ -41,7 +41,7 @@ Generated from `.arch/` by the plugin's state script when this skill started:
 
 - `NO_ARCH_SESSION` → stop: "No architecture session found. Run `/arch:new` first."
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
-- Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
+- Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on, LOCKS and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
 ---
 

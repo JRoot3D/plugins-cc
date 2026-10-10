@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 const DOC = `Deterministic helpers for the architector skills. Owns .arch/index.json. Run from the project root.
 
@@ -7,7 +10,7 @@ Read (always exit 0, safe to inject into a skill):
   summary                                    state report: counts, stage, finalize gate, map and brief freshness, problems,
                                              implementation state of the briefs (reads openspec/changes/, read-only)
   check                                      consistency problems only
-Write (exit 1 with ERROR: on bad input, nothing written):
+Write (exit 1 with ERROR: on bad input, nothing written; one writer at a time through .arch/index.lock):
   init PROJECT                               create index.json (fails if it exists)
   add-node SLUG NAME PRIORITY SUMMARY        register an existing ideas/SLUG.md as a live raw-idea node
   archive SLUG                               ideas/SLUG.md -> ideas/SLUG.archived.md (SLUG-N.archived.md if taken), drop from nodes
@@ -17,14 +20,32 @@ Write (exit 1 with ERROR: on bad input, nothing written):
                                              for dependency, FROM must be decided before TO
   disconnect FROM TO [TYPE]                  remove matching connections
   rename OLD NEW                             repoint connections from OLD to NEW (merge/split), drop self-links and duplicates
-  log SKILL SUMMARY [--node SLUG]... [--full]   append a sessions entry, bump last_updated; --full marks a whole-graph map
+  log SKILL SUMMARY [--node SLUG]... [--full]   append a line to sessions.jsonl; --full marks a whole-graph map
+Shared board (git; every command a no-op that says so while the board is not shared):
+  share                                      create refs/arch/locks on the branch's remote: this board is now shared
+  claim KEY...                               fetch the locks and take KEY (a node slug, #briefs or #context) for you;
+                                             fails while someone else holds it or this branch lacks its last release
+  release                                    commit .arch/, pull, push, then free your locks
+  unlock KEY [--force]                       free KEY without releasing; another person's lock only with --force
+Git and hooks (no index needed):
+  sync                                       fetch refs/arch/locks, set up the index.json merge driver, print LOCKS
+  can-edit FILE                              exit 1 when a lock keeps you from editing FILE (a hook's guard)
+  merge-index BASE OURS THEIRS               git merge driver for index.json: nodes by slug, connections by ends and type
 
-index.json: {project, created, last_updated, nodes: [{slug, name, priority, maturity, file, summary}],
-             connections: [{from, to, type, note}], sessions: [{date, skill, node (slug or list)?, scope?, summary}]}
-Revision = number of sessions entries. A feature brief records the revision it was written at (_Arch revision: N_);
-any later session that names one of its nodes makes it outdated. _Superseded by_ retires a brief; _Followed up by_
-does not — finalize bumps the old brief's revision instead, so later changes to its nodes outdate it again, except
-nodes a brief that follows it up covers: those changes outdate only the newest brief in the chain.
+index.json: {project, created, nodes: [{slug, name, priority, maturity, file, summary}], connections: [{from, to, type, note}]}
+sessions.jsonl: one {date, skill, node (slug or list)?, scope?, revision?, seen?, summary} per line, append-only;
+  .arch/.gitattributes merges it with merge=union, so two clones that both logged merge without a conflict.
+  Sessions an index.json from before 4.0 holds stay there and come first.
+Revision = number of sessions. A node's revision (rev= in NODES) = number of sessions that changed it: a count, so it
+survives a git merge that interleaves two clones' sessions, where a position would not. A feature brief records its
+nodes' revisions (_Arch revision: slug=N, slug=N_); a node whose revision grew since makes it outdated. A full map
+records them too (seen). _Superseded by_ retires a brief; _Followed up by_ does not — finalize bumps the old brief's
+revisions instead, so later changes to its nodes outdate it again, except nodes a brief that follows it up covers:
+those changes outdate only the newest brief in the chain.
+A shared board keeps refs/arch/locks on the remote: one commit holding locks.json {nodes: {KEY: {owner, host, since}},
+released: {KEY: commit}}. You are user.email on this host. A lock changes by a push on top of the tip just fetched,
+which the remote refuses once anyone else moved it, so of two people claiming one node only one gets it. set, add-node
+and archive need your lock on the node; released[KEY] is the commit a release pushed, which claim requires in HEAD.
 A brief names its OpenSpec changes on the first \`- Changes:\` line of its ## OpenSpec Handoff; summary derives each
 stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI.
 
@@ -42,10 +63,25 @@ const ARGS = {
   disconnect: 'FROM TO [TYPE]',
   rename: 'OLD NEW',
   log: 'SKILL SUMMARY [--node SLUG]... [--full]',
+  share: '',
+  claim: 'KEY...',
+  release: '',
+  unlock: 'KEY [--force]',
+  sync: '',
+  'can-edit': 'FILE',
+  'merge-index': 'BASE OURS THEIRS',
 }
 
 const ARCH = '.arch'
 const INDEX = `${ARCH}/index.json`
+const SESSIONS = `${ARCH}/sessions.jsonl`
+const ATTRIBUTES = `${ARCH}/.gitattributes`
+const GITIGNORE = `${ARCH}/.gitignore`
+const LOCK = `${ARCH}/index.lock`
+const LOCKS_REF = 'refs/arch/locks'
+// lock keys besides node slugs: the feature briefs with the todo list, and project-context.md
+const BOARD_KEYS = ['#briefs', '#context']
+const SCRIPT = path.resolve(process.argv[1]).replaceAll('\\', '/')
 const MATURITY = ['raw-idea', 'explored', 'decided', 'ready']
 const PRIORITY = ['blocking', 'core', 'extension', 'deferred']
 const CONNECTION_TYPES = ['dependency', 'shared-concern', 'conflict']
@@ -85,9 +121,211 @@ const write = (file, text) => {
   fs.renameSync(`${file}.tmp`, file)
 }
 
-const saveIndex = data => {
-  data.last_updated = today()
-  write(INDEX, `${JSON.stringify(data, null, 2)}\n`)
+// Sessions an index.json from before 4.0 holds: they stay there, new ones go to sessions.jsonl.
+let legacySessions = []
+
+// last_updated (before 4.0) changed with every write, so two clones always conflicted on it: dropped
+const saveIndex = ({ sessions, last_updated, ...data }) =>
+  write(INDEX, `${JSON.stringify(legacySessions.length ? { ...data, sessions: legacySessions } : data, null, 2)}\n`)
+
+// One writer at a time: two runs that read index.json together would each save their copy and lose the other's change.
+const lock = () => {
+  for (let tries = 0; ; tries++) {
+    try {
+      fs.closeSync(fs.openSync(LOCK, 'wx'))
+      process.on('exit', () => fs.rmSync(LOCK, { force: true }))
+      return
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+    }
+    // a write takes milliseconds, so an older lock was left by a killed run
+    if (Date.now() - (stat(LOCK)?.mtimeMs ?? Date.now()) > 10_000) fs.rmSync(LOCK, { force: true })
+    else if (tries > 600) fail(`${LOCK} is held by another arch.mjs run`)
+    else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25)
+  }
+}
+
+// git in the project root; never throws, a missing git is a failed call
+const git = (args, input) => {
+  const r = spawnSync('git', args, { encoding: 'utf8', input })
+  return { ok: r.status === 0, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() || String(r.error ?? '') }
+}
+const gitOrFail = (args, input) => {
+  const r = git(args, input)
+  return r.ok ? r.out : fail(`git ${args[0]}: ${r.err}`)
+}
+
+const branch = () => git(['branch', '--show-current']).out
+const remote = () => git(['config', `branch.${branch()}.remote`]).out || 'origin'
+const shared = () => git(['rev-parse', '-q', '--verify', LOCKS_REF]).ok
+const me = () => ({ owner: git(['config', 'user.email']).out || os.userInfo().username, host: os.hostname() })
+const isMine = (holder, who) => holder?.owner === who.owner && holder?.host === who.host
+const holderText = h => `${h.owner} on ${h.host} since ${h.since}`
+const now = () => `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`
+const fetchLocks = () => git(['fetch', '-q', remote(), `+${LOCKS_REF}:${LOCKS_REF}`])
+
+// locks.json on refs/arch/locks; null when it does not parse
+const readLocks = () => {
+  try {
+    const data = JSON.parse(git(['cat-file', '-p', `${LOCKS_REF}:locks.json`]).out)
+    return { nodes: data.nodes ?? {}, released: data.released ?? {} }
+  } catch {
+    return null
+  }
+}
+
+// A commit of locks.json on top of the local tip, pushed: the remote takes it only while its tip is still that one.
+const pushLocks = (locks, message) => {
+  const blob = gitOrFail(['hash-object', '-w', '--stdin'], `${JSON.stringify(locks, null, 2)}\n`)
+  const tree = gitOrFail(['mktree'], `100644 blob ${blob}\tlocks.json\n`)
+  const parent = git(['rev-parse', '-q', '--verify', LOCKS_REF]).out
+  const commit = gitOrFail(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', message])
+  if (!git(['push', '-q', remote(), `${commit}:${LOCKS_REF}`]).ok) return false
+  git(['update-ref', LOCKS_REF, commit])
+  return true
+}
+
+// fetch, edit, push; a push that lost the race fetches the new tip and edits again
+const changeLocks = (message, edit) => {
+  for (let tries = 0; tries < 5; tries++) {
+    const fetched = fetchLocks()
+    if (!fetched.ok) fail(`cannot fetch ${LOCKS_REF} from ${remote()}: ${fetched.err}`)
+    const locks = readLocks() ?? fail(`${LOCKS_REF}:locks.json is not valid JSON`)
+    const before = JSON.stringify(locks)
+    const text = edit(locks)
+    if (JSON.stringify(locks) === before || pushLocks(locks, message)) return text
+  }
+  return fail(`${LOCKS_REF} kept changing on ${remote()} — run it again`)
+}
+
+// lines a file must hold, appended when missing
+const addLines = (file, wanted) => {
+  const text = read(file) ?? ''
+  const missing = wanted.filter(line => !lines(text).includes(line))
+  if (missing.length) write(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`)
+}
+
+// What a shared board needs in this clone: the merge driver (git config is per clone, the path per plugin version)
+// and the .arch/ files that route merges to it and keep the local write lock out of commits.
+const setUpGit = () => {
+  git(['config', 'merge.arch-index.name', 'arch index.json merge'])
+  git(['config', 'merge.arch-index.driver', `node "${SCRIPT}" merge-index %O %A %B`])
+}
+const gitFiles = () => {
+  addLines(ATTRIBUTES, ['sessions.jsonl merge=union', 'index.json merge=arch-index'])
+  addLines(GITIGNORE, ['index.lock', '*.tmp'])
+}
+
+const checkKey = key => SLUG.test(key) || BOARD_KEYS.includes(key) || fail(`KEY must be a node slug or one of ${BOARD_KEYS.join(', ')}`)
+
+// On a shared board a node file changes only under its holder's lock.
+const requireLock = key => {
+  if (!shared()) return
+  const holder = readLocks()?.nodes[key]
+  if (!isMine(holder, me())) fail(holder ? `${key} is locked by ${holderText(holder)}` : `${key} is not claimed — run claim ${key} first`)
+}
+
+// The real path of a file that may not exist yet: symlinks resolved (/var is /private/var on macOS), case as on disk
+const realPath = file => {
+  const full = path.resolve(file)
+  try {
+    return fs.realpathSync.native(full)
+  } catch {
+    const dir = path.dirname(full)
+    return dir === full ? full : path.join(realPath(dir), path.basename(full))
+  }
+}
+
+// The lock key that guards a file under .arch/, or null
+const keyOf = file => {
+  const rel = path.relative(realPath(ARCH), realPath(file)).split(path.sep).join('/')
+  const idea = /^ideas\/([^/]+?)(?:\.archived)?\.md$/.exec(rel)
+  if (idea) return idea[1]
+  if (rel.startsWith('feature-briefs/') || rel === 'todo-list.md') return '#briefs'
+  return rel === 'project-context.md' ? '#context' : null
+}
+
+const locksReport = () => {
+  if (!shared()) return []
+  const locks = readLocks()
+  if (!locks) return [`LOCKS invalid — ${LOCKS_REF}:locks.json is not valid JSON`]
+  const who = me()
+  const held = Object.entries(locks.nodes).sort(([a], [b]) => cmp(a, b))
+  return [
+    `LOCKS shared via ${remote()} ${LOCKS_REF} — you are ${who.owner} on ${who.host}; ${held.length || 'none'} held`,
+    ...held.map(([key, h]) => `  ${key} — ${isMine(h, who) ? `yours since ${h.since}` : holderText(h)}`),
+  ]
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+// Three-way merge: a side that kept the base value takes the other side's; objects merge field by field.
+const merge3 = (base, ours, theirs, at, conflicts) => {
+  if (same(ours, theirs) || same(ours, base)) return theirs
+  if (same(theirs, base)) return ours
+  if ([base ?? {}, ours, theirs].every(isObject)) {
+    const out = {}
+    for (const k of new Set([...Object.keys(ours), ...Object.keys(theirs)])) {
+      const v = merge3(base?.[k], ours[k], theirs[k], `${at}.${k}`, conflicts)
+      if (v !== undefined) out[k] = v
+    }
+    return out
+  }
+  conflicts.push(at)
+  return ours ?? theirs
+}
+
+// Keyed lists merge item by item: ours keep their order, items only theirs have follow.
+const mergeList = (key, sides, at, conflicts) => {
+  const [base, ours, theirs] = sides.map(list => new Map((Array.isArray(list) ? list : []).map(x => [key(x), x])))
+  return [...new Set([...ours.keys(), ...theirs.keys()])]
+    .map(k => merge3(base.get(k), ours.get(k), theirs.get(k), `${at} ${k}`, conflicts))
+    .filter(x => x !== undefined)
+}
+
+// Commands that run without index.json and without the write lock: git runs merge-index inside release's pull.
+const STANDALONE = {
+  sync() {
+    if (!git(['rev-parse', '--git-dir']).ok) return 'LOCKS not shared — not a git repository'
+    const fetched = fetchLocks()
+    if (!shared()) return 'LOCKS not shared'
+    setUpGit()
+    return [...(fetched.ok ? [] : [`SYNC_FAILED — showing the locks last fetched: ${fetched.err}`]), ...locksReport()].join('\n')
+  },
+
+  'can-edit'([file]) {
+    const key = keyOf(file)
+    if (key === null || !shared()) return 'OK'
+    const holder = readLocks()?.nodes[key]
+    if (isMine(holder, me())) return 'OK'
+    return fail(
+      holder
+        ? `${key} is locked by ${holderText(holder)} — leave it to them`
+        : `${key} is not claimed — claim it first: node "${SCRIPT}" claim ${key}`,
+    )
+  },
+
+  'merge-index'([base, ours, theirs]) {
+    const sides = [base, ours, theirs].map(file => {
+      try {
+        const data = JSON.parse(read(file) || '{}')
+        return isObject(data) ? data : {}
+      } catch {
+        return fail(`${file} is not valid JSON`)
+      }
+    })
+    const conflicts = []
+    const { sessions, ...rest } = merge3(...sides.map(({ nodes, connections, ...other }) => other), 'index', conflicts)
+    const merged = {
+      ...rest,
+      nodes: mergeList(n => n.slug, sides.map(s => s.nodes), 'node', conflicts),
+      connections: mergeList(c => `${c.from} -> ${c.to} (${c.type})`, sides.map(s => s.connections), 'connection', conflicts),
+      ...(sessions ? { sessions } : {}),
+    }
+    fs.writeFileSync(ours, `${JSON.stringify(merged, null, 2)}\n`)
+    if (conflicts.length) fail(`index.json: both sides changed ${conflicts.join(', ')} — kept ours, fix it by hand`)
+    return 'OK merged index.json'
+  },
 }
 
 const read = file => {
@@ -143,6 +381,13 @@ const slugsOf = session => (Array.isArray(session.node) ? session.node : session
 
 // Nodes a session changed. finalize only names the nodes its briefs cover.
 const changedBy = session => (session.skill === 'finalize' ? [] : slugsOf(session))
+
+// slug -> number of sessions that changed it (the node's revision)
+const revs = sessions => {
+  const out = new Map()
+  for (const slug of sessions.flatMap(changedBy)) out.set(slug, (out.get(slug) ?? 0) + 1)
+  return out
+}
 
 const nodePath = node => `${ARCH}/${node.file ?? ''}`
 
@@ -381,8 +626,10 @@ const summary = data => {
   const live = nodes.map(n => [n, history(nodePath(n))])
   const archived = mdFiles(`${ARCH}/ideas`).filter(name => name.endsWith('.archived.md'))
   const found = problems(data)
+  const rev = revs(sessions)
+  const lastUpdated = sessions.map(s => s.date).sort().at(-1) ?? data.created ?? 'none'
   const out = [
-    `ARCH_SESSION project=${data.project ?? 'none'} created=${data.created ?? 'none'} last_updated=${data.last_updated ?? 'none'} ` +
+    `ARCH_SESSION project=${data.project ?? 'none'} created=${data.created ?? 'none'} last_updated=${lastUpdated} ` +
       `nodes=${nodes.length} archived=${archived.length} revision=${sessions.length}`,
   ]
 
@@ -391,12 +638,15 @@ const summary = data => {
   out.push(`MATURITY ${counts.map(([m, c]) => `${m}=${c}(${Math.round((100 * c) / total)}%)`).join(' ')}`)
   out.push(`STAGE ${stage(nodes)}`)
 
-  out.push('NODES priority maturity slug h=history-lines — summary')
+  out.push('NODES priority maturity slug h=history-lines rev=revision — summary')
   const hist = new Map(live.map(([n, h]) => [n.slug, h]))
   const order = (x, y) =>
     rank(PRIORITY, x.priority) - rank(PRIORITY, y.priority) || rank(MATURITY, x.maturity) - rank(MATURITY, y.maturity) || cmp(x.slug ?? '', y.slug ?? '')
   for (const n of [...nodes].sort(order))
-    out.push(`  ${String(n.priority).padEnd(9)} ${String(n.maturity).padEnd(8)} ${n.slug} h=${(hist.get(n.slug) ?? []).length} — ${n.summary ?? ''}`)
+    out.push(
+      `  ${String(n.priority).padEnd(9)} ${String(n.maturity).padEnd(8)} ${n.slug} h=${(hist.get(n.slug) ?? []).length} ` +
+        `rev=${rev.get(n.slug) ?? 0} — ${n.summary ?? ''}`,
+    )
 
   const blocking = nodes.filter(n => n.priority === 'blocking' && n.maturity !== 'ready')
   const reasons = [
@@ -409,12 +659,19 @@ const summary = data => {
 
   out.push(`CONNECTIONS ${connections.length}`, ...connections.map(c => `  ${c.from} -> ${c.to} (${c.type})`))
 
-  // only a full map makes the whole graph fresh; sessions are in run order, so everything after it is newer
+  // only a full map makes the whole graph fresh; a node changed since when its revision outgrew the one the map saw
   const last = sessions.findLastIndex(s => s.skill === 'map' && s.scope === 'full')
   if (last >= 0) {
-    const changed = [...new Set(sessions.slice(last + 1).flatMap(changedBy))].filter(s => hist.has(s)).sort()
+    const map = sessions[last]
+    // a map logged before 4.0 saw every session before it
+    const seen = map.seen ?? Object.fromEntries(revs(sessions.slice(0, last + 1)))
+    const at = map.revision ?? last + 1
+    const changed = [...rev]
+      .filter(([slug, n]) => n > (seen[slug] ?? 0) && hist.has(slug))
+      .map(([slug]) => slug)
+      .sort()
     out.push(
-      `LAST_MAP ${sessions[last].date} (full map, revision ${last + 1}, ${sessions.length - last - 1} sessions since) — ` +
+      `LAST_MAP ${map.date} (full map, revision ${at}, ${sessions.length - at} sessions since) — ` +
         `nodes changed since: ${changed.join(', ') || 'none (map is fresh)'}`,
     )
   } else out.push('LAST_MAP never — no full /arch:map yet')
@@ -432,13 +689,19 @@ const summary = data => {
     }
     const outdated = []
     for (const [name, meta] of active) {
-      const rev = meta['Arch revision'] ?? ''
-      const later = /^\d+$/.test(rev) ? sessions.slice(Number(rev)) : sessions
+      // _Arch revision: stack=3, sync=1_ — a node it does not name is at 0
+      const at = new Map(
+        (meta['Arch revision'] ?? '').split(',').map(pair => {
+          const [slug, n] = pair.split('=').map(s => s.trim())
+          return [slug, Number(n) || 0]
+        }),
+      )
       const why = briefSlugs(meta)
         .filter(slug => !handedOn.get(name)?.has(slug))
         .flatMap(slug => {
           if (!hist.has(slug)) return [`${slug} archived`]
-          const skills = [...new Set(later.filter(s => changedBy(s).includes(slug)).map(s => s.skill))].sort()
+          const later = sessions.filter(s => changedBy(s).includes(slug)).slice(at.get(slug) ?? 0)
+          const skills = [...new Set(later.map(s => s.skill))].sort()
           return skills.length ? [`${slug} ${skills.join('+')}`] : []
         })
       if (why.length) outdated.push(`  ${name} — ${why.join(', ')}`)
@@ -465,7 +728,7 @@ const summary = data => {
   if (events.length)
     out.push('RECENT_HISTORY newest first', ...events.slice(0, 8).map(([date, skill, slug, text]) => `  ${date} ${skill} ${slug} — ${text}`))
 
-  out.push(...report(found))
+  out.push(...locksReport(), ...report(found))
   return out.join('\n')
 }
 
@@ -485,7 +748,7 @@ const COMMANDS = {
   init(data, [project]) {
     if (data !== null) fail(`${INDEX} already exists`)
     fs.mkdirSync(`${ARCH}/ideas`, { recursive: true })
-    saveIndex({ project, created: today(), last_updated: today(), nodes: [], connections: [], sessions: [] })
+    saveIndex({ project, created: today(), nodes: [], connections: [] })
     return `OK created ${INDEX}`
   },
 
@@ -493,6 +756,7 @@ const COMMANDS = {
     if (!SLUG.test(slug)) fail('slug must be lowercase words joined by hyphens, e.g. tech-stack')
     if (!PRIORITY.includes(priority)) fail(`priority must be one of ${PRIORITY.join(', ')}`)
     if (data.nodes.some(n => n.slug === slug)) fail(`node ${q(slug)} already exists`)
+    requireLock(slug)
     const rel = `ideas/${slug}.md`
     if (read(`${ARCH}/${rel}`) === null) fail(`write ${ARCH}/${rel} first`)
     data.nodes.push({ slug, name, priority, maturity: 'raw-idea', file: rel, summary })
@@ -502,6 +766,7 @@ const COMMANDS = {
 
   archive(data, [slug]) {
     const node = findNode(data, slug)
+    requireLock(slug)
     const src = nodePath(node)
     if (!stat(src)?.isFile()) fail(`node file missing: ${src}`)
     let dst = `${ARCH}/ideas/${slug}.archived.md`
@@ -517,6 +782,7 @@ const COMMANDS = {
   set(data, [slug, field, value]) {
     if (!FIELDS.includes(field)) fail(`FIELD must be one of ${FIELDS.join(', ')}`)
     const node = findNode(data, slug)
+    requireLock(slug)
     if (field === 'maturity' || field === 'priority') {
       const allowed = field === 'maturity' ? MATURITY : PRIORITY
       if (!allowed.includes(value)) fail(`${field} must be one of ${allowed.join(', ')}`)
@@ -581,11 +847,88 @@ const COMMANDS = {
     for (const slug of node) findNode(data, slug)
     const entry = { date: today(), skill }
     if (node.length) entry.node = node.length === 1 ? node[0] : node
-    if (full) entry.scope = 'full'
+    if (full) Object.assign(entry, { scope: 'full', revision: data.sessions.length + 1, seen: Object.fromEntries(revs(data.sessions)) })
     entry.summary = summary
-    data.sessions.push(entry)
-    saveIndex(data)
+    addLines(ATTRIBUTES, ['sessions.jsonl merge=union'])
+    write(SESSIONS, `${read(SESSIONS) ?? ''}${JSON.stringify(entry)}\n`)
     return `OK logged ${JSON.stringify(entry)}`
+  },
+
+  share() {
+    if (!git(['rev-parse', '--git-dir']).ok) fail('not a git repository')
+    if (shared() || fetchLocks().ok) return `OK already shared via ${remote()} ${LOCKS_REF}`
+    setUpGit()
+    gitFiles()
+    if (!pushLocks({ nodes: {}, released: {} }, 'share the arch board')) fail(`cannot push ${LOCKS_REF} to ${remote()}`)
+    return `OK shared via ${remote()} ${LOCKS_REF} — commit and push .arch/ so the others get the board`
+  },
+
+  claim(data, keys) {
+    keys.forEach(checkKey)
+    if (!shared() && !fetchLocks().ok) return 'OK not shared — no lock needed'
+    setUpGit()
+    const who = me()
+    return changeLocks(`claim ${keys.join(' ')} — ${who.owner}`, locks => {
+      for (const key of keys) {
+        const holder = locks.nodes[key]
+        if (holder && !isMine(holder, who)) fail(`${key} is locked by ${holderText(holder)}`)
+        const at = locks.released[key]
+        if (at && !git(['merge-base', '--is-ancestor', at, 'HEAD']).ok)
+          fail(`${key} was last released in ${at.slice(0, 7)}, which this branch lacks — git pull, then claim again`)
+      }
+      for (const key of keys) locks.nodes[key] ??= { owner: who.owner, host: who.host, since: now() }
+      return `OK ${keys.join(', ')} held by ${who.owner} on ${who.host}`
+    })
+  },
+
+  release() {
+    if (!shared()) return 'OK not shared — nothing to release'
+    setUpGit()
+    gitFiles()
+    const [name, upstreamRemote, upstream] = [branch(), remote(), git(['config', `branch.${branch()}.merge`]).out]
+    if (!name || !upstream) fail('this branch has no upstream — git push -u once, then release again')
+    // release pushes .arch/ work only: other unpushed commits are the user's to push
+    const others = git(['log', '--no-merges', '--format=%h %s', '@{u}..HEAD', '--', '.', `:(exclude)${ARCH}`]).out
+    if (others) fail(`unpushed commits outside ${ARCH}/ — push them yourself, then release again:\n${others}`)
+    const who = me()
+    const mine = Object.entries(readLocks()?.nodes ?? {})
+      .filter(([, h]) => isMine(h, who))
+      .map(([key]) => key)
+    gitOrFail(['add', '-A', '--', ARCH])
+    if (!git(['diff', '--cached', '--quiet', '--', ARCH]).ok) gitOrFail(['commit', '-q', '-m', `arch: ${mine.join(', ') || 'board'}`, '--', ARCH])
+    for (let tries = 0; ; tries++) {
+      const pulled = git(['pull', '-q', '--no-rebase', '--ff', '--no-edit', upstreamRemote, upstream])
+      if (!pulled.ok) {
+        git(['merge', '--abort'])
+        fail(`git pull failed; your locks are kept — integrate by hand, then release again:\n${pulled.err}`)
+      }
+      const pushed = git(['push', '-q', upstreamRemote, `HEAD:${upstream}`])
+      if (pushed.ok) break
+      if (tries === 2) fail(`git push failed; your locks are kept:\n${pushed.err}`)
+    }
+    const head = gitOrFail(['rev-parse', 'HEAD'])
+    return changeLocks(`release — ${who.owner}`, locks => {
+      const freed = Object.keys(locks.nodes).filter(key => isMine(locks.nodes[key], who))
+      for (const key of freed) {
+        delete locks.nodes[key]
+        locks.released[key] = head
+      }
+      return `OK pushed ${head.slice(0, 7)} to ${upstreamRemote}; freed ${freed.join(', ') || 'nothing'}`
+    })
+  },
+
+  unlock(data, [key], { force = false }) {
+    checkKey(key)
+    if (!shared()) return 'OK not shared — no lock'
+    const who = me()
+    return changeLocks(`unlock ${key} — ${who.owner}`, locks => {
+      const holder = locks.nodes[key]
+      if (!holder) return `OK ${key} was not locked`
+      const theirs = !isMine(holder, who)
+      if (theirs && !force) fail(`${key} is locked by ${holderText(holder)} — --force frees it, only when the user says it is abandoned`)
+      delete locks.nodes[key]
+      return `OK freed ${key}${theirs ? ` — changes ${holder.owner} made under it and never released may conflict later` : ''}`
+    })
   },
 }
 
@@ -593,20 +936,26 @@ const main = argv => {
   const [cmd, ...rest] = argv
   if (cmd === '-h' || cmd === '--help') return console.log(DOC)
   if (!Object.hasOwn(ARGS, cmd ?? '')) fail(`command must be one of ${Object.keys(ARGS).join(', ')} (--help for details)`)
-  // Only log's --node and --full are options; any other word, '-' first or not, is positional. `--` ends options.
+  // Only log's --node and --full and unlock's --force are options; any other word, '-' first or not, is positional.
+  // `--` ends options.
   const args = []
-  const values = { node: [], full: false }
+  const values = { node: [], full: false, force: false }
   for (let i = 0, options = true; i < rest.length; i++) {
     const word = rest[i]
     if (options && word === '--') options = false
     else if (options && cmd === 'log' && word === '--full') values.full = true
+    else if (options && cmd === 'unlock' && word === '--force') values.force = true
     else if (options && cmd === 'log' && word === '--node') values.node.push(rest[++i] ?? fail("option '--node' needs a SLUG"))
     else args.push(word)
   }
-  const words = ARGS[cmd].split(' ').filter(w => /^\[?[A-Z]+\]?$/.test(w))
-  if (args.length < words.filter(w => !w.startsWith('[')).length || args.length > words.length) fail(`usage: ${cmd} ${ARGS[cmd]}`.trim())
+  // KEY... takes one or more
+  const words = ARGS[cmd].split(' ').filter(w => /^\[?[A-Z]+\]?$|^[A-Z]+\.\.\.$/.test(w))
+  const most = words.some(w => w.endsWith('...')) ? Infinity : words.length
+  if (args.length < words.filter(w => !w.startsWith('[')).length || args.length > most) fail(`usage: ${cmd} ${ARGS[cmd]}`.trim())
+  if (Object.hasOwn(STANDALONE, cmd)) return console.log(STANDALONE[cmd](args))
 
   const reading = cmd === 'summary' || cmd === 'check'
+  if (!reading && stat(ARCH)?.isDirectory()) lock()
   let data = null
   if (stat(INDEX)?.isFile()) {
     let invalid = null
@@ -614,6 +963,18 @@ const main = argv => {
       data = JSON.parse(read(INDEX))
     } catch (e) {
       invalid = `${INDEX} is not valid JSON: ${e.message}`
+    }
+    const logged = []
+    for (const [i, line] of lines(read(SESSIONS)).entries()) {
+      try {
+        if (line.trim()) logged.push(JSON.parse(line))
+      } catch (e) {
+        invalid ??= `${SESSIONS} line ${i + 1} is not valid JSON: ${e.message}`
+      }
+    }
+    if (!invalid && isObject(data) && Array.isArray(data.sessions ?? [])) {
+      legacySessions = data.sessions ?? []
+      data.sessions = [...legacySessions, ...logged]
     }
     if (!invalid && schemaError(data)) invalid = `${INDEX}: ${schemaError(data)}`
     if (invalid) {

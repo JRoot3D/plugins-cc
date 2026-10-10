@@ -9,6 +9,8 @@ Node.js 18+ (`node`) on PATH — the native Claude Code installer does not ship 
 
 macOS, Linux and Windows work the same way: the skills call the script with a command that both Bash and PowerShell run, so Git for Windows is optional, and a home directory with spaces in its path is fine.
 
+For a board several people work on at once (see Working Together): git, and a remote the branch tracks.
+
 For the handoff after `/arch:finalize`: the OpenSpec CLI (`npm install -g @fission-ai/openspec`) and `openspec init` in the project. The arch skills themselves don't need it.
 
 ## Installation
@@ -70,6 +72,7 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 | Revisit or reopen a decision | `/arch:decide [node]` |
 | Change a node's priority | `/arch:decide [node] priority [level]` |
 | Want a progress snapshot | `/arch:status` |
+| Several people will work on the board at once | `/arch-share` (once), then the skills as usual |
 | Want to find gaps or inconsistencies | `/arch:audit` |
 | Checking one node's decisions in context | `/arch:audit [node]` |
 | All blocking nodes are ready | `/arch:finalize` |
@@ -118,14 +121,17 @@ Non-blocking nodes that aren't ready are flagged but do not block finalization.
 
 Decisions follow ADR practice ([MADR](https://adr.github.io/madr/)): each `## Decision` lists alternatives, rationale, implications, the **assumptions** it rests on (with confidence and basis — a dated source, a spike or a measurement) and a **confirmation** criterion that would show it is wrong. Evidence is scaled to reversal cost: a database choice needs more than a logging library. A costly choice resting on a shaky assumption, or on one vendor, can instead be made cheaper to reverse: its Implications name a **`Boundary:`** — the interface the other nodes use instead of it — and `/arch:audit` flags a node that reaches past it. A revisited decision is kept as `## Previous Decision (superseded …)`, never erased.
 
-Feature briefs are append-only. Each records the board revision it was written at (`_Arch revision: N_`); when a covered node changes later, `summary` lists the brief under `BRIEFS_OUTDATED`, and `/arch:finalize` asks whether to **supersede** it (a replacement brief; the old todo-list row is marked superseded), **follow it up** (a delta brief that depends on it) or **keep** it. The stage's state in OpenSpec decides which: `not started` → supersede or keep; `planned` → supersede or keep, where the replacement keeps the change names and you revise the proposed change with `/opsx:update [change] @.arch/feature-briefs/[new brief]` before `/opsx:apply` (one with no tasks yet is continued with `/opsx:propose [change] @.arch/feature-briefs/[new brief]`); `in progress` or `done` → follow up or keep. When the state is `unknown`, or there is no `openspec/` directory here, finalize asks how far the stage got. After a follow up, a change of the old stage that already has tasks done finishes on the old brief's decisions; one with no task done takes the follow-up brief too: not proposed or no tasks yet → `/opsx:propose [change] @[old brief] @[follow-up brief]`; `0/M tasks` → `/opsx:update [change] @[follow-up brief]` before `/opsx:apply`.
+Feature briefs are append-only. Each records the revision of every node it covers (`_Arch revision: auth=3, data-model=5_` — a node's revision counts the sessions that changed it); when a covered node changes later, `summary` lists the brief under `BRIEFS_OUTDATED`, and `/arch:finalize` asks whether to **supersede** it (a replacement brief; the old todo-list row is marked superseded), **follow it up** (a delta brief that depends on it) or **keep** it. The stage's state in OpenSpec decides which: `not started` → supersede or keep; `planned` → supersede or keep, where the replacement keeps the change names and you revise the proposed change with `/opsx:update [change] @.arch/feature-briefs/[new brief]` before `/opsx:apply` (one with no tasks yet is continued with `/opsx:propose [change] @.arch/feature-briefs/[new brief]`); `in progress` or `done` → follow up or keep. When the state is `unknown`, or there is no `openspec/` directory here, finalize asks how far the stage got. After a follow up, a change of the old stage that already has tasks done finishes on the old brief's decisions; one with no task done takes the follow-up brief too: not proposed or no tasks yet → `/opsx:propose [change] @[old brief] @[follow-up brief]`; `0/M tasks` → `/opsx:update [change] @[follow-up brief]` before `/opsx:apply`.
 
 ## .arch/ Structure
 
 ```
 .arch/
   project-context.md          ← shared context (product type, constraints, out of scope)
-  index.json                  ← all nodes, connections, session history
+  index.json                  ← all nodes and connections
+  sessions.jsonl              ← session history, one line per skill run
+  .gitattributes              ← merges sessions.jsonl by union, index.json through arch's merge driver
+  .gitignore                  ← keeps the local write lock out of git
   ideas/
     tech-stack.md             ← one file per idea node
     data-model.md
@@ -142,6 +148,29 @@ Feature briefs are append-only. Each records the board revision it was written a
 
 **Add `.arch/` to `.gitignore`** if you don't want architecture exploration in version history.
 Or commit it — the decision history is valuable.
+
+## Working Together
+
+Several people can work on one board at the same time, each from their own clone, a node each. The board travels with the branch through git; who holds which node lives on a ref of its own on the remote, `refs/arch/locks` (one `locks.json`), so locking never adds commits to your branch and works whichever branch you are on.
+
+1. **Share once.** Commit and push `.arch/`, then run `/arch-share`. It creates `refs/arch/locks` on the branch's remote.
+2. **Claim before you change.** On a shared board the skills run `arch.mjs claim [node]` as soon as they start working on a node, and before they write a new node's file. Claim fetches the locks first. It fails while someone else holds the node, saying who and since when, and asks you to `git pull` when your branch lacks the node's last release. Feature briefs and the todo list are one lock, `#briefs`; `project-context.md` is `#context`. Every other node stays open to everyone, and so do reading, `/arch:status` and `/arch:audit`.
+3. **Release when done.** At the end of the run the skill calls `arch.mjs release`. It commits `.arch/` alone, pulls (merge, never rebase), pushes to the branch's upstream, then frees your locks and records the pushed commit as each node's last release. It refuses when you have unpushed commits outside `.arch/`, since those are yours to push. When the pull or push fails, it says why and keeps your locks.
+4. **Abandoned locks are freed by hand.** A lock stays until its holder releases it. When a laptop is gone for good, `arch.mjs unlock [node] --force` frees it; the skills run it only when you say so. Changes made under that lock and never released may conflict later.
+
+Merges stay clean while people hold different nodes. `sessions.jsonl` merges by union. `index.json` merges through arch's driver (`merge-index`): nodes are matched by slug and connections by their ends and type, field by field; it conflicts only when both sides changed the same field. Claim and sync register the driver in each clone's `.git/config`.
+
+Who you are is `user.email` on this host. The same address on two machines is two holders.
+
+Locks are enforced in two places. `arch.mjs set`, `add-node` and `archive` refuse a node you do not hold, on every surface. In the CLI the plugin's hooks also:
+
+- refuse an Edit or Write of a node file, a brief or `project-context.md` that you do not hold;
+- fetch the locks at session start and when an `/arch:` skill starts, putting the fresh `LOCKS` block into its Current State;
+- show the nodes you hold in the status line.
+
+An edit made through a shell command bypasses the hook. Without a remote, or before `/arch-share`, nothing changes: claim and release say the board is not shared and do nothing.
+
+macOS, Linux and Windows work alike. The script calls `git` by argument list, and the merge driver is written with forward slashes for Git's own shell.
 
 ## Implementation with OpenSpec
 
