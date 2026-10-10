@@ -180,15 +180,15 @@ Show the user the exact edits and write them only after the user confirms; each 
 ```yaml
 rules:
   proposal:
-    - "From arch briefs (.arch/feature-briefs/): name every attached brief under Impact; the briefs' OpenSpec Handoff capabilities are a starting point — one that exists in openspec/specs/ by now is Modified"
+    - "From arch briefs (.arch/feature-briefs/): name every attached brief under Impact by its file name and where it lives — .arch/feature-briefs/NN-slug.md, or, when .arch/ is a worktree of the board's own branch (git -C .arch branch --show-current), feature-briefs/NN-slug.md on that branch, named, since no code branch holds it; the briefs' OpenSpec Handoff capabilities are a starting point — one that exists in openspec/specs/ by now is Modified"
   design:
-    - "If proposal.md names arch briefs, design.md is required: name them in Context, carry their Key Decisions with their alternatives into Decisions (a later brief's decision wins; a brief marked _Superseded by:_ is replaced by the brief it points to) and their Out of Scope into Non-Goals. Never contradict a Key Decision — if one cannot hold, stop and tell the user to run /arch:decide [node]"
+    - "If proposal.md names arch briefs, design.md is required: name them in Context as proposal.md does, carry their Key Decisions with their alternatives into Decisions (a later brief's decision wins; a brief marked _Superseded by:_ is replaced by the brief it points to) and their Out of Scope into Non-Goals. Never contradict a Key Decision — if one cannot hold, stop and tell the user to run /arch:decide [node]"
   tasks:
     - "If design.md names an arch brief: its Assumptions to Validate become the first tasks"
 operations:
   apply:
     guidance:
-      - "If design.md names an arch brief: when that brief is marked _Superseded by:_, stop and tell the user to run /opsx:update [change] @[the brief it points to] first; when a task cannot follow one of its Key Decisions, stop and tell the user to run /arch:decide [node] instead of implementing around it"
+      - "If design.md names an arch brief (read it at .arch/feature-briefs/ in this checkout): when that brief is marked _Superseded by:_, stop and tell the user to run /opsx:update [change] @[the brief it points to] first; when a task cannot follow one of its Key Decisions, stop and tell the user to run /arch:decide [node] instead of implementing around it"
 ```
 
 ### Step 5 — Notify

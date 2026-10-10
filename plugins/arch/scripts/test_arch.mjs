@@ -550,6 +550,30 @@ describe('shared board', () => {
     has(ok(alice, 'sync'), 'none held')
   })
 
+  test('stages count the changes on every branch of the remote', () => {
+    // alice's brief has two changes: bob works on one in a pull request branch, the other is archived on the main branch
+    fs.mkdirSync(path.join(alice, '.arch/feature-briefs'))
+    fs.writeFileSync(path.join(alice, '.arch/feature-briefs/01-x.md'), brief('add-auth, setup'))
+    const put = (rel, text) => {
+      fs.mkdirSync(path.dirname(path.join(bob, rel)), { recursive: true })
+      fs.writeFileSync(path.join(bob, rel), text)
+      sh(bob, 'add', rel)
+      sh(bob, 'commit', '-q', '-m', rel)
+    }
+    sh(bob, 'switch', '-q', '-c', 'feat/auth')
+    put('openspec/changes/add-auth/tasks.md', '- [x] a\n- [ ] b\n')
+    sh(bob, 'push', '-q', '-u', 'origin', 'HEAD')
+    sh(bob, 'switch', '-q', '-')
+    put('openspec/changes/archive/2026-10-05-setup/proposal.md', 'x')
+    put('openspec/changes/archive/2026-10-02-old/proposal.md', 'x')
+    sh(bob, 'push', '-q')
+    ok(alice, 'sync')
+    assert.ok(!fs.existsSync(path.join(alice, 'openspec')), 'alice has not pulled the code')
+    const out = ok(alice, 'summary')
+    has(out, 'STAGES 1\n  01-x.md — in progress: add-auth 1/2 tasks on origin/feat/auth; setup archived 2026-10-05\n')
+    has(out, 'CHANGES_NOT_IN_A_BRIEF old (archived 2026-10-02)\n')
+  })
+
   test('of two claims racing for one node, one wins', async () => {
     const codes = await Promise.all([spawnArch(alice, 'claim', 'a'), spawnArch(bob, 'claim', 'a')])
     assert.deepEqual(codes.sort(), [0, 1])

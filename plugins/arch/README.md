@@ -227,6 +227,24 @@ Alice: /arch:explore auth            Bob: /arch:decide data-model
 - **Busy node.** When someone else holds the node, the skill says who and since when, and leaves the node alone: `auth is locked by alice@team.dev on alice-mbp since 2026-10-10 09:12 UTC`. Pick another node, or ask them to finish.
 - **Release.** At the end of the run the skill releases. It commits `.arch/` on the board branch, pulls (merge, never rebase), pushes the board branch and frees your locks. Your code branch is never touched.
 
+### Implementing the features
+
+Implementation goes the project's usual way: feature branches and pull requests. The board only supplies the briefs.
+
+| What | Where | How it reaches the remote |
+|------|-------|---------------------------|
+| Nodes, decisions, feature briefs, todo list | `.arch/` (the board branch) | `release`, directly |
+| `openspec/config.yaml` (arch's context, rules, apply guidance) | a code branch | the project's pull request flow |
+| OpenSpec changes (`openspec/changes/`) and the code | feature branches | pull requests |
+
+1. `/arch:finalize` takes the `#briefs` lock, so two runs never number stages alike. The briefs and the todo list go to the board branch. Its edit to `openspec/config.yaml` is a code change: merge it the usual way, since the `/opsx:` commands follow arch's rules only once it is in.
+2. For each stage, a developer starts a feature branch and runs `/opsx:propose [change] @.arch/feature-briefs/NN-slug.md`. The brief is on disk in every clone, whatever the code branch, because `.arch/` is the board's worktree. Then `/opsx:apply`, the pull request, and `/opsx:archive`.
+3. Implementation takes no locks: locks guard the board, so several people implement different stages at once.
+4. When a task cannot follow a Key Decision, apply stops and points to `/arch:decide [node]`. Run it from any code branch; it claims the node on the board. The brief then reads as outdated, and `/arch:finalize` supersedes or follows it up. `/opsx:update [change] @[new brief]` carries the change in the feature branch.
+5. The proposal and `design.md` name each brief as `feature-briefs/NN-slug.md` on the board branch. A reviewer finds it there, and `design.md` carries its Key Decisions anyway, so the pull request reads on its own.
+
+`/arch:status` shows the same progress to everyone, whatever branch their code checkout is on. On a shared board it reads `openspec/changes/` on every branch of the remote, open pull requests included, as well as the working tree. A change archived on any branch counts as done; otherwise its furthest progress is shown with the branch it is on, e.g. `add-auth 3/8 tasks on origin/feat/auth`. The remote's branches are fetched at session start and when an `/arch:` skill starts.
+
 ### What a lock covers
 
 | Lock | Covers | Taken by |
@@ -307,7 +325,7 @@ Each brief's `## OpenSpec Handoff` names the changes for its stage (usually one)
 `/arch:finalize` also writes three fields of `openspec/config.yaml` (or a legacy `config.yml`) — it shows each edit and writes it only after you confirm:
 
 - `context:` — from `.arch/project-context.md` plus a `Settled architecture (rationale in .arch/):` line with the blocking decisions. OpenSpec injects it into every artifact, apply and archive. Arch owns only that one line: a later run proposes refreshing it when a blocking decision or the set of blocking nodes changed; everything else in `context:` is yours. An in-progress change then sees the new decision in `context:` but finishes on its `design.md`; the new decision arrives with the follow-up brief's change.
-- `rules:` (`proposal`, `design`, `tasks`) — OpenSpec adds them to an artifact's instructions when propose, update or continue writes it; they never reach apply. They have the proposal name every attached brief, make `design.md` required for a change that names arch briefs (it is optional in `spec-driven`), carry the Key Decisions with their alternatives into Decisions (a later brief's decision wins; a superseded brief is replaced by the brief it points to), Out of Scope into Non-Goals and Assumptions to Validate into the first tasks, and stop with `/arch:decide [node]` when a Key Decision cannot hold.
+- `rules:` (`proposal`, `design`, `tasks`) — OpenSpec adds them to an artifact's instructions when propose, update or continue writes it; they never reach apply. They have the proposal and `design.md` name every attached brief (with the board's branch on a shared board, since no code branch holds the brief), make `design.md` required for a change that names arch briefs (it is optional in `spec-driven`), carry the Key Decisions with their alternatives into Decisions (a later brief's decision wins; a superseded brief is replaced by the brief it points to), Out of Scope into Non-Goals and Assumptions to Validate into the first tasks, and stop with `/arch:decide [node]` when a Key Decision cannot hold.
 - `operations.apply.guidance` — besides `context:`, the only field arch writes that reaches `/opsx:apply` (rules never do): apply stops and asks for `/opsx:update [change] @[new brief]` when the change's brief was superseded, and points to `/arch:decide [node]` when a task cannot follow a Key Decision instead of implementing around it.
 
 `rules:` and `operations:` are written only for the `spec-driven` schema. Arch owns every entry that mentions `arch brief` and keeps the others. With a store-backed OpenSpec root (a `store:` line in the config), arch writes nothing: it shows the `Settled architecture` line and the rules/operations snippet to add to the store's config (`openspec context` shows which). Ran `openspec init` after finalizing? Run `/arch:finalize` again: with nothing new to brief, it only adds the config.

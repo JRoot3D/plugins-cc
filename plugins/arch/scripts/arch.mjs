@@ -54,7 +54,9 @@ remote: one commit holding locks.json {branch, nodes: {KEY: {owner, host, since}
 which the remote refuses once anyone else moved it, so of two people claiming one node only one gets it. set, add-node
 and archive need your lock on the node; released[KEY] is the commit a release pushed, which claim requires in HEAD.
 A brief names its OpenSpec changes on the first \`- Changes:\` line of its ## OpenSpec Handoff; summary derives each
-stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI.
+stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI:
+in the working tree, and on a shared board on every branch of the remote too (archived anywhere = done; otherwise the
+furthest progress, with the branch it is on).
 
 Node.js 18+, standard library only.`
 
@@ -380,6 +382,8 @@ const STANDALONE = {
     const fetched = fetchLocks()
     if (!shared()) return 'LOCKS not shared'
     setUpGit()
+    // the code's branches too, for the stages' progress; --prune drops the branches merged pull requests deleted
+    git(['fetch', '-q', '--prune', remote()])
     const out = fetched.ok ? [] : [`SYNC_FAILED — showing the locks last fetched: ${fetched.err}`]
     const name = boardBranch()
     // a clone without .arch/ gets the board; one with a plain .arch/ is left to /arch-share, which moves it aside
@@ -602,35 +606,91 @@ const subdirs = dir =>
     .filter(d => !d.startsWith('.') && stat(`${dir}/${d}`)?.isDirectory())
     .sort()
 
-// [done, total] in the change's tasks.md, counted the way OpenSpec counts them.
-const tasks = change => {
+// [done, total] in a tasks.md, counted the way OpenSpec counts them.
+const countTasks = text => {
   // ponytail: reads tasks.md only; a custom schema whose apply.tracks names another file shows no tasks
-  const found = (read(`${CHANGES}/${change}/tasks.md`) ?? '')
+  const found = (text ?? '')
     .split('\n')
     .map(line => TASK_LINE.exec(line))
     .filter(Boolean)
   return [found.filter(m => (m[1] ?? '').toLowerCase() === 'x').length, found.length]
 }
 
-// STAGES and CHANGES_NOT_IN_A_BRIEF lines: what openspec/changes/ holds for each brief's changes.
-const implementation = written => {
-  const isDir = dir => stat(dir)?.isDirectory() ?? false
-  const proposed = subdirs(CHANGES).filter(d => d !== 'archive')
+// What one place holds under openspec/changes/: active changes, archived ones with their dates, and an active
+// change's [done, total] tasks. `where` names a remote branch; the working tree has none.
+const changesIn = (where, dirs, readFile) => {
   const archived = new Map()
-  for (const d of subdirs(`${CHANGES}/archive`)) {
+  for (const d of dirs(`${CHANGES}/archive`)) {
     // sorted, so the latest date wins
     const m = ARCHIVED_CHANGE.exec(d)
     if (m) archived.set(m[2], m[1])
   }
+  return { where, proposed: dirs(CHANGES).filter(d => d !== 'archive'), archived, tasks: c => countTasks(readFile(`${CHANGES}/${c}/tasks.md`)) }
+}
+
+// On a shared board the code lives on many branches: openspec/changes/ on every branch of the remote counts too,
+// open pull requests included, so the stages read the same whichever branch this checkout is on. The remote's
+// default branch comes first; branches with the same changes tree are read once.
+const remoteChanges = () => {
+  if (!shared()) return []
+  const prefix = `refs/remotes/${remote()}/`
+  const head = git(['symbolic-ref', '-q', `${prefix}HEAD`]).out
+  const refs = git(['for-each-ref', '--format=%(refname)', prefix])
+    .out.split('\n')
+    .filter(r => r && r !== `${prefix}HEAD` && r !== `${prefix}${boardBranch()}`)
+    .sort((a, b) => (b === head) - (a === head))
+  if (!refs.length) return []
+  const trees = git(['cat-file', '--batch-check'], refs.map(r => `${r}:${CHANGES}\n`).join('')).out.split('\n')
+  const seen = new Map()
+  refs.forEach((ref, i) => {
+    const [oid, type] = (trees[i] ?? '').split(' ')
+    if (type === 'tree' && !seen.has(oid)) seen.set(oid, ref.slice('refs/remotes/'.length))
+  })
+  return [...seen].map(([oid, where]) => {
+    const paths = git(['ls-tree', '-r', '--name-only', oid]).out.split('\n')
+    // the directories right under dir, as subdirs() lists them on disk
+    const dirs = dir => {
+      const under = dir === CHANGES ? '' : `${dir.slice(CHANGES.length + 1)}/`
+      const names = paths.filter(p => p.startsWith(under)).map(p => p.slice(under.length).split('/'))
+      return [...new Set(names.filter(parts => parts.length > 1 && !parts[0].startsWith('.')).map(parts => parts[0]))].sort()
+    }
+    const readFile = file => {
+      const r = git(['cat-file', '-p', `${oid}:${file.slice(CHANGES.length + 1)}`])
+      return r.ok ? r.out : null
+    }
+    return changesIn(where, dirs, readFile)
+  })
+}
+
+// STAGES and CHANGES_NOT_IN_A_BRIEF lines: what openspec/changes/ holds for each brief's changes.
+const implementation = written => {
+  const isDir = dir => stat(dir)?.isDirectory() ?? false
+  const sources = [changesIn(null, subdirs, read), ...remoteChanges()]
+  const anywhere = isDir(CHANGES) || sources.length > 1
+  // Within one place an active change wins over an archived one of the same name; across places, archived anywhere
+  // wins (a branch merged before the archive still holds it active).
+  const places = c => sources.map(s => (s.proposed.includes(c) ? { s } : s.archived.has(c) ? { date: s.archived.get(c) } : null)).filter(Boolean)
+  const archivedOn = c => places(c).map(f => f.date).filter(Boolean).sort().at(-1)
+  const status = c => {
+    const date = archivedOn(c)
+    if (date) return { kind: 'archived', date }
+    const found = places(c)
+    if (!found.length) return { kind: 'not proposed' }
+    // the furthest progress, and where; the working tree wins a tie
+    const best = found
+      .map(f => ({ where: f.s.where, counts: f.s.tasks(c) }))
+      .reduce((x, y) => (y.counts[0] > x.counts[0] || (y.counts[0] === x.counts[0] && y.counts[1] > x.counts[1]) ? y : x))
+    return { kind: 'proposed', ...best }
+  }
   const stages = written.filter(([, meta]) => !('Superseded by' in meta)).map(([name]) => name)
   const names = new Map(stages.map(name => [name, briefChanges(name)]))
-  const out = [`STAGES ${stages.length}${isDir('openspec') ? '' : ' — no openspec/ directory here'}`]
+  const out = [`STAGES ${stages.length}${isDir('openspec') || anywhere ? '' : ' — no openspec/ directory here'}`]
   for (const name of stages) {
     if (!names.get(name).length) {
       out.push(`  ${name} — unknown: its OpenSpec Handoff names no changes`)
       continue
     }
-    if (isDir('openspec') && !isDir(CHANGES)) {
+    if (isDir('openspec') && !anywhere) {
       // ponytail: a store-backed OpenSpec root keeps its changes outside the repo; reading them needs the CLI
       out.push(`  ${name} — unknown: openspec/changes/ not found (store-backed root?)`)
       continue
@@ -639,19 +699,14 @@ const implementation = written => {
     const kinds = new Set()
     let done = 0
     for (const c of names.get(name)) {
-      // an active change wins over an archived one of the same name
-      if (proposed.includes(c)) {
-        const [n, total] = tasks(c)
-        kinds.add('proposed')
+      const st = status(c)
+      kinds.add(st.kind)
+      if (st.kind === 'proposed') {
+        const [n, total] = st.counts
+        const on = st.where ? ` on ${st.where}` : ''
         done += n
-        parts.push(total ? `${c} ${n}/${total} tasks` : `${c} proposed (no tasks yet)`)
-      } else if (archived.has(c)) {
-        kinds.add('archived')
-        parts.push(`${c} archived ${archived.get(c)}`)
-      } else {
-        kinds.add('not proposed')
-        parts.push(`${c} not proposed`)
-      }
+        parts.push(total ? `${c} ${n}/${total} tasks${on}` : `${c} proposed (no tasks yet)${on}`)
+      } else parts.push(st.kind === 'archived' ? `${c} archived ${st.date}` : `${c} not proposed`)
     }
     const only = kind => kinds.size === 1 && kinds.has(kind)
     const state = only('archived')
@@ -663,19 +718,17 @@ const implementation = written => {
           : 'in progress'
     out.push(`  ${name} — ${state}: ${parts.join('; ')}`)
   }
-  if (isDir(CHANGES)) {
+  if (anywhere) {
     const listed = new Set([...names.values()].flat())
     // archived changes older than the first brief predate arch's handoff
     const since = written
       .map(([, meta]) => (meta.Created ?? '').slice(0, 10))
       .filter(d => DATE.test(d))
       .sort()[0]
+    const all = [...new Set(sources.flatMap(s => [...s.proposed, ...s.archived.keys()]))].filter(c => !listed.has(c)).sort()
     const extra = [
-      ...proposed.filter(c => !listed.has(c)),
-      ...[...archived.keys()]
-        .sort()
-        .filter(c => since && archived.get(c) >= since && !listed.has(c) && !proposed.includes(c))
-        .map(c => `${c} (archived ${archived.get(c)})`),
+      ...all.filter(c => !archivedOn(c)),
+      ...all.filter(c => since && archivedOn(c) >= since).map(c => `${c} (archived ${archivedOn(c)})`),
     ]
     out.push(`CHANGES_NOT_IN_A_BRIEF ${extra.join(', ') || 'none'}`)
   }
