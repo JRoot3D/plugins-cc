@@ -70,7 +70,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'arch-graph', description: 'Show the arch dependency graph (.arch/index.json) in a pane' })
     await $.command.register({ name: 'arch-board', description: 'Open .arch/board.html: the board state and dependency graph, live in the browser' })
-    await $.command.register({ name: 'arch-share', description: 'Share this arch board through git: per-node locks on refs/arch/locks' })
+    await $.command.register({ name: 'arch-share', description: 'Give the arch board its own git branch and per-node locks, or set this clone up for a shared board: /arch-share [branch]' })
+    await $.command.register({ name: 'arch-release', description: 'Commit and push .arch/, then free the arch nodes you hold' })
+    await $.command.register({ name: 'arch-unlock', description: "Free an abandoned arch lock, yours or another person's: /arch-unlock <node>" })
     if (await $.fs.exists(INDEX)) {
       void open($)
       void sync($).catch(() => undefined)
@@ -92,7 +94,12 @@ export const register: Register = on => {
     return { text: (exitCode === 0 ? stdout : stderr || stdout).trim() }
   })
 
-  on('command.run', { command: 'arch-share' }, $ => typed($, ['share']))
+  // The person typed it, so it runs: /arch-unlock passes --force, their call that the lock is abandoned.
+  on('command.run', { command: 'arch-share' }, ($, e) => typed($, e.args.trim() ? ['share', e.args.trim()] : ['share']))
+  on('command.run', { command: 'arch-release' }, $ => typed($, ['release']))
+  on('command.run', { command: 'arch-unlock' }, ($, e) =>
+    e.args.trim() ? typed($, ['unlock', e.args.trim(), '--force']) : { text: 'usage: /arch-unlock <node, #briefs or #context>' },
+  )
 
   // A skill's Current State shows the locks as last fetched: fetch them now and put the fresh block in its place.
   on('skill.prompt', async ($, e, next) => {

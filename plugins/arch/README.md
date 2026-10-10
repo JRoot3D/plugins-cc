@@ -9,7 +9,7 @@ Node.js 18+ (`node`) on PATH — the native Claude Code installer does not ship 
 
 macOS, Linux and Windows work the same way: the skills call the script with a command that both Bash and PowerShell run, so Git for Windows is optional, and a home directory with spaces in its path is fine.
 
-For a board several people work on at once (see Working Together): git, and a remote the branch tracks.
+For a board several people work on at once (see [Working in Parallel](#working-in-parallel)): git, and a remote the branch tracks.
 
 For the handoff after `/arch:finalize`: the OpenSpec CLI (`npm install -g @fission-ai/openspec`) and `openspec init` in the project. The arch skills themselves don't need it.
 
@@ -73,7 +73,9 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 | Change a node's priority | `/arch:decide [node] priority [level]` |
 | Want a progress snapshot | `/arch:status` |
 | Want to see the board and its dependency graph in the browser | `/arch-board` |
-| Several people will work on the board at once | `/arch-share` (once), then the skills as usual |
+| Several people will work on the board at once, or the project takes changes through pull requests | `/arch-share [branch]` (once, at the start), then the skills as usual |
+| A run ended before it released its locks, or release failed and you fixed the cause | `/arch-release` |
+| A teammate's lock is abandoned | `/arch-unlock [node]` |
 | Want to find gaps or inconsistencies | `/arch:audit` |
 | Checking one node's decisions in context | `/arch:audit [node]` |
 | All blocking nodes are ready | `/arch:finalize` |
@@ -118,7 +120,7 @@ The page itself never changes. Its data is `.arch/board.js`, which `arch.mjs` re
 The data is a script rather than JSON for a reason: a page opened from disk may load a script beside it, but the browser will not let it read `index.json`.
 
 - A node file edited by hand shows up at the next `arch.mjs` write.
-- On a shared board the page shows your own clone: pull to see what others released. Locks refresh when a session or an `/arch:` skill starts.
+- On a shared board the page follows the board branch in your clone: it is pulled, and the locks fetched, when a session or an `/arch:` skill starts, and at every claim and release.
 
 `board.html` is created with the board, and copied again only when a plugin update changes it. For a board from an older version, run `/arch-board` once. If the page says `board.js not found`, run `/arch-board`. Both files are listed in `.arch/.gitignore`.
 
@@ -184,30 +186,94 @@ Feature briefs are append-only. Each records the revision of every node it cover
 ```
 
 **Add `.arch/` to `.gitignore`** if you don't want architecture exploration in version history.
-Or commit it — the decision history is valuable.
+Or commit it — the decision history is valuable. Or give it a branch of its own with `/arch-share`: the history is kept, and it never mixes with the code's branches or pull requests (see [Working in Parallel](#working-in-parallel)).
 
-## Working Together
+## Working in Parallel
 
-Several people can work on one board at the same time, each from their own clone, a node each. The board travels with the branch through git; who holds which node lives on a ref of its own on the remote, `refs/arch/locks` (one `locks.json`), so locking never adds commits to your branch and works whichever branch you are on.
+Several people can work on one board at the same time, each in their own clone on their own machine. A node is held by one person at a time, and everyone else keeps working on other nodes. Reading, `/arch:status`, `/arch:audit` and the board page are never blocked.
 
-1. **Share once.** Commit and push `.arch/`, then run `/arch-share`. It creates `refs/arch/locks` on the branch's remote.
-2. **Claim before you change.** On a shared board the skills run `arch.mjs claim [node]` as soon as they start working on a node, and before they write a new node's file. Claim fetches the locks first. It fails while someone else holds the node, saying who and since when, and asks you to `git pull` when your branch lacks the node's last release. Feature briefs and the todo list are one lock, `#briefs`; `project-context.md` is `#context`. Every other node stays open to everyone, and so do reading, `/arch:status` and `/arch:audit`.
-3. **Release when done.** At the end of the run the skill calls `arch.mjs release`. It commits `.arch/` alone, pulls (merge, never rebase), pushes to the branch's upstream, then frees your locks and records the pushed commit as each node's last release. It refuses when you have unpushed commits outside `.arch/`, since those are yours to push. When the pull or push fails, it says why and keeps your locks.
-4. **Abandoned locks are freed by hand.** A lock stays until its holder releases it. When a laptop is gone for good, `arch.mjs unlock [node] --force` frees it; the skills run it only when you say so. Changes made under that lock and never released may conflict later.
+The board lives on a git branch of its own, apart from the code. Whatever branch your code is on, and however the project takes code changes (pull requests from feature branches included), board changes go straight to the board branch. They never land in a code branch or a pull request.
 
-Merges stay clean while people hold different nodes. `sessions.jsonl` merges by union. `index.json` merges through arch's driver (`merge-index`): nodes are matched by slug and connections by their ends and type, field by field; it conflicts only when both sides changed the same field. Claim and sync register the driver in each clone's `.git/config`.
+### Set it up
 
-Who you are is `user.email` on this host. The same address on two machines is two holders.
+At the start of the architecture work, one person runs `/arch-share` (`/arch:new` suggests it). Use `/arch-share [branch]` to name the branch; the default is `arch`. You need a git repository with a remote and `git config user.email` set; that address is how arch tells people apart. `/arch-share` does four things:
 
-Locks are enforced in two places. `arch.mjs set`, `add-node` and `archive` refuse a node you do not hold, on every surface. In the CLI the plugin's hooks also:
+1. It moves `.arch/` onto a new branch that holds only the board. `.arch/` stays where it is, now as a [git worktree](https://git-scm.com/docs/git-worktree) of that branch.
+2. It pushes the board branch.
+3. It creates `refs/arch/locks` on the remote: a ref of its own holding `locks.json`.
+4. It hides `.arch/` from the code checkout through `.git/info/exclude`, so `git status` on the code stays clean. If a code branch already tracked `.arch/`, the removal is staged there. Commit it the way the project takes changes; a pull request is fine, since the board itself never needs one again.
 
-- refuse an Edit or Write of a node file, a brief or `project-context.md` that you do not hold;
-- fetch the locks at session start and when an `/arch:` skill starts, putting the fresh `LOCKS` block into its Current State;
-- show the nodes you hold in the status line.
+Everyone else pulls the project, installs the plugin and starts Claude Code there. At session start the plugin checks out the board branch at `.arch/` by itself. If you already have a `.arch/` folder, run `/arch-share`: it sets the board branch up and keeps the old folder as `.arch.local-…`.
 
-An edit made through a shell command bypasses the hook. Without a remote, or before `/arch-share`, nothing changes: claim and release say the board is not shared and do nothing.
+The board branch is pushed to directly, so it must not require pull requests. If the repository protects every branch, exempt the board branch. `main` cannot serve as the board branch: your code checkout usually has it checked out, git checks a branch out in one place only, and `main` often takes changes only through pull requests.
 
-macOS, Linux and Windows work alike. The script calls `git` by argument list, and the merge driver is written with forward slashes for Git's own shell.
+This is worth doing alone too: in a project that merges through pull requests, `/arch-share` keeps board commits out of your feature branches.
+
+### Day to day
+
+Run the skills as usual; they take the locks and give them back:
+
+```
+Alice: /arch:explore auth            Bob: /arch:decide data-model
+  claim auth ✓ (pulls arch first)      claim data-model ✓
+  … discussion, node file updated …    … decision recorded …
+  release: commit, pull, push arch,    release: commit, pull (merges
+           free auth                            Alice's push), push arch,
+                                                free data-model
+```
+
+- **Claim.** A skill claims a node as soon as it starts working on it, before the discussion, so nobody changes the node under you. A new node is claimed by its slug before its file is written. The status line shows `arch: holding auth`.
+- **Fresh content.** Claim pulls the board branch before it takes the node, so you start from what the others released. A session start and the start of each `/arch:` skill pull it too.
+- **Busy node.** When someone else holds the node, the skill says who and since when, and leaves the node alone: `auth is locked by alice@team.dev on alice-mbp since 2026-10-10 09:12 UTC`. Pick another node, or ask them to finish.
+- **Release.** At the end of the run the skill releases. It commits `.arch/` on the board branch, pulls (merge, never rebase), pushes the board branch and frees your locks. Your code branch is never touched.
+
+### What a lock covers
+
+| Lock | Covers | Taken by |
+|------|--------|----------|
+| a node slug, e.g. `auth` | its file `ideas/auth.md`; its maturity, priority, name and summary; archiving it | `/arch:explore`, `/arch:decide`, `/arch:triage`, `/arch:map` (each node it changes), `/arch:new` (each new node) |
+| `#briefs` | `feature-briefs/` and `todo-list.md` | `/arch:finalize` |
+| `#context` | `project-context.md` | `/arch:new`, when it adds constraints |
+
+Connections and the session log take no lock: two people connecting nodes at the same time merge cleanly (see below).
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/arch-share [branch]` | Gives the board its own branch and the locks: once per project. In another clone of a shared project, sets `.arch/` up as the board branch's worktree |
+| `/arch-release` | Releases now: commits and pushes the board branch, frees your locks. Use it after fixing a failed release, or when a run ended before it could release |
+| `/arch-unlock <node>` | Frees a lock its holder abandoned, such as a lost laptop or a crashed session. Works on anyone's lock, so check with them first: changes they made under it and never released may conflict later |
+
+Locks never expire on their own.
+
+### When something goes wrong
+
+| You see | Do |
+|---------|----|
+| `auth is locked by …` | Work on another node, or ask them to release |
+| `this project's board is shared on the branch arch, and .arch/ here is not its worktree: run /arch-share` | `/arch-share` |
+| `a branch arch already exists` | Name another branch: `/arch-share <branch>` |
+| `pulling the board branch arch failed and was undone` | `git -C .arch pull`, resolve it as any merge (usually `index.json`, below), then run the skill again or `/arch-release` |
+| `git push to arch failed; your locks are kept` | Check your access and that the board branch takes direct pushes, then `/arch-release` |
+| `index.json: both sides changed node auth.maturity — kept ours` | Two people changed the same field, which happens only when a lock was bypassed or force-freed. Fix `.arch/index.json` by hand and finish the merge in `.arch/` |
+
+### How merges stay clean
+
+- `sessions.jsonl` merges by union: both sides' lines are kept.
+- `index.json` merges through arch's driver. Nodes are matched by slug and connections by their ends and type, field by field. It conflicts only when both sides changed the same field.
+- A node file has one holder at a time, so only one side changes it.
+- Brief and map freshness count the sessions that changed each node rather than positions in the log, so a merge that interleaves two people's sessions keeps them right.
+- `.arch/.gitignore` keeps the local write lock and the board page out of commits.
+
+### Enforcement and limits
+
+- `arch.mjs set`, `add-node` and `archive` refuse a node you do not hold, on every surface.
+- In the CLI the plugin's hooks also refuse an Edit or Write of a file you do not hold. They fetch the locks and pull the board branch at session start and when an `/arch:` skill starts, and show the nodes you hold in the status line. The desktop app gets the `arch.mjs` checks only, and claim and release still pull.
+- An edit made through a shell command (`sed`, a heredoc) bypasses the hook.
+- You are `user.email` on this machine: the same address on two machines counts as two holders.
+- Without a remote, or before `/arch-share`, none of this runs: `.arch/` is an ordinary folder, as it always was.
+- macOS, Linux and Windows work alike: the script calls `git` by argument list, and the merge driver is written with forward slashes for Git's own shell.
 
 ## Implementation with OpenSpec
 

@@ -432,7 +432,7 @@ describe('arch.mjs', () => {
   })
 })
 
-// two clones of one bare remote: alice shared the board, bob cloned it after
+// two clones of one bare remote: alice shared the board, bob cloned the project after
 describe('shared board', () => {
   let base
   let alice
@@ -460,23 +460,45 @@ describe('shared board', () => {
   }
   const idea = (dir, slug) => path.join(dir, '.arch', 'ideas', `${slug}.md`)
   const spawnArch = (cwd, ...args) => new Promise(done => spawn(process.execPath, [SCRIPT, ...args], { cwd }).on('close', done))
+  const board = (dir, ...args) => sh(path.join(dir, '.arch'), ...args)
 
   beforeEach(() => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-git-'))
     sh(base, 'init', '-q', '--bare', 'remote.git')
     alice = clone('alice')
+    fs.writeFileSync(path.join(alice, 'code.txt'), 'code')
+    sh(alice, 'add', 'code.txt')
+    sh(alice, 'commit', '-q', '-m', 'code')
+    sh(alice, 'push', '-q', '-u', 'origin', 'HEAD')
     ok(alice, 'init', 'P')
     for (const slug of ['a', 'b']) {
       fs.writeFileSync(idea(alice, slug), node(slug, 'core', 'raw-idea'))
       ok(alice, 'add-node', slug, slug, 'core', 'x')
     }
     ok(alice, 'log', 'new', 'two nodes')
-    sh(alice, 'add', '-A')
-    sh(alice, 'commit', '-q', '-m', 'board')
-    sh(alice, 'push', '-q', '-u', 'origin', 'HEAD')
-    has(ok(alice, 'share'), 'OK shared via origin refs/arch/locks')
+    has(ok(alice, 'share'), 'OK shared: .arch/ is now the branch arch on origin')
     bob = clone('bob')
-    has(ok(bob, 'sync'), 'LOCKS shared via origin refs/arch/locks — you are bob@x')
+    has(ok(bob, 'sync'), 'LOCKS shared via origin refs/arch/locks, board branch arch — you are bob@x')
+  })
+
+  test('the board lives on its own branch, out of the code branches', () => {
+    assert.equal(board(alice, 'symbolic-ref', '--short', 'HEAD'), 'arch')
+    assert.equal(board(bob, 'symbolic-ref', '--short', 'HEAD'), 'arch') // sync checked it out
+    assert.deepEqual(sh(alice, 'ls-tree', '-r', '--name-only', 'origin/arch').split('\n').sort(), [
+      '.gitattributes', '.gitignore', 'ideas/a.md', 'ideas/b.md', 'index.json', 'sessions.jsonl',
+    ])
+    lacks(sh(alice, 'ls-tree', '-r', '--name-only', 'HEAD'), '.arch')
+    assert.equal(sh(alice, 'status', '--porcelain'), '') // .arch/ is hidden from the code checkout
+    // a feature branch for the code leaves the board where it is
+    sh(alice, 'switch', '-q', '-c', 'feature')
+    fs.writeFileSync(path.join(alice, 'code.txt'), 'feature work')
+    sh(alice, 'commit', '-q', '-am', 'feature')
+    ok(alice, 'claim', 'a')
+    ok(alice, 'set', 'a', 'summary', 'on feature')
+    ok(alice, 'release')
+    assert.equal(board(alice, 'symbolic-ref', '--short', 'HEAD'), 'arch')
+    lacks(sh(alice, 'ls-remote', '--heads', 'origin'), 'feature') // the code commit is still the user's to push
+    has(sh(alice, 'show', 'origin/arch:index.json'), 'on feature')
   })
 
   test('a node has one holder; the others work on other nodes', () => {
@@ -494,15 +516,13 @@ describe('shared board', () => {
     has(out, '  b — yours since ')
   })
 
-  test('release pushes the board; the next holder must have it', () => {
+  test('release pushes the board branch; the next claim pulls it', () => {
     ok(alice, 'claim', 'a')
     fs.appendFileSync(idea(alice, 'a'), '- 2026-10-10 /arch:explore — alice was here\n')
     ok(alice, 'set', 'a', 'maturity', 'explored')
     ok(alice, 'log', 'explore', 'x', '--node', 'a')
-    has(ok(alice, 'release'), 'freed a')
-    assert.equal(sh(alice, 'status', '--porcelain'), '') // the lock file and temp files stay out of git
-    has(arch(bob, 'claim', 'a').out, 'git pull, then claim again')
-    sh(bob, 'pull', '-q', '--no-rebase')
+    has(ok(alice, 'release'), 'to arch on origin; freed a')
+    assert.equal(board(alice, 'status', '--porcelain'), '') // the lock file and the board page stay out of git
     ok(bob, 'claim', 'a')
     has(fs.readFileSync(idea(bob, 'a'), 'utf8'), 'alice was here')
   })
@@ -518,7 +538,7 @@ describe('shared board', () => {
     ok(bob, 'log', 'decide', 'bob', '--node', 'b')
     ok(alice, 'release')
     ok(bob, 'release') // pulls alice's push: index.json through the merge driver, sessions.jsonl by union
-    sh(alice, 'pull', '-q', '--no-rebase')
+    ok(alice, 'sync') // pulls bob's
     const index = JSON.parse(fs.readFileSync(path.join(alice, '.arch/index.json'), 'utf8'))
     assert.deepEqual(
       index.nodes.map(n => [n.slug, n.priority, n.maturity]),
@@ -542,11 +562,31 @@ describe('shared board', () => {
     ok(bob, 'claim', 'a')
   })
 
-  test('release leaves unpushed code to its owner', () => {
-    fs.writeFileSync(path.join(alice, 'code.txt'), 'x')
-    sh(alice, 'add', 'code.txt')
-    sh(alice, 'commit', '-q', '-m', 'code')
-    has(arch(alice, 'release').out, 'unpushed commits outside .arch/')
+  test('joining keeps a plain .arch/ aside', () => {
+    const carol = clone('carol')
+    fs.mkdirSync(path.join(carol, '.arch'))
+    fs.writeFileSync(path.join(carol, '.arch/board.js'), 'old')
+    has(ok(carol, 'sync'), 'BOARD_NOT_SET_UP')
+    has(arch(carol, 'claim', 'a').out, 'run /arch-share')
+    has(ok(carol, 'share'), 'the .arch/ that was here is now .arch.local-')
+    assert.equal(board(carol, 'symbolic-ref', '--short', 'HEAD'), 'arch')
+    ok(carol, 'claim', 'a')
+  })
+
+  test('sharing a board a code branch tracks stages its removal there', () => {
+    const dave = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-tracked-'))
+    sh(dave, 'init', '-q', '--bare', 'remote.git')
+    sh(dave, 'clone', '-q', 'remote.git', 'w')
+    const w = path.join(dave, 'w')
+    for (const [key, value] of [['user.email', 'd@x'], ['user.name', 'd'], ['commit.gpgsign', 'false']]) sh(w, 'config', key, value)
+    ok(w, 'init', 'P')
+    sh(w, 'add', '-A')
+    sh(w, 'commit', '-q', '-m', 'board on the code branch')
+    sh(w, 'push', '-q', '-u', 'origin', 'HEAD')
+    has(ok(w, 'share', 'design'), 'its removal is staged')
+    has(sh(w, 'diff', '--cached', '--name-status'), 'D\t.arch/index.json')
+    assert.equal(board(w, 'symbolic-ref', '--short', 'HEAD'), 'design')
+    has(arch(w, 'share', 'design').out, 'OK this clone works on the shared board')
   })
 })
 

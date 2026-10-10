@@ -25,14 +25,16 @@ Write (exit 1 with ERROR: on bad input, nothing written; one writer at a time th
   rename OLD NEW                             repoint connections from OLD to NEW (merge/split), drop self-links and duplicates
   log SKILL SUMMARY [--node SLUG]... [--full]   append a line to sessions.jsonl; --full marks a whole-graph map
 Shared board (git; every command a no-op that says so while the board is not shared):
-  share                                      create refs/arch/locks on the branch's remote: this board is now shared
-  claim KEY...                               fetch the locks and take KEY (a node slug, #briefs or #context) for you;
-                                             fails while someone else holds it or this branch lacks its last release
-  release                                    commit .arch/, pull, push, then free your locks
+  share [BRANCH]                             give the board its own branch (default arch) with .arch/ as its worktree,
+                                             push it and create refs/arch/locks; in a clone of a shared board, set .arch/
+                                             up as that branch's worktree (a plain .arch/ is kept aside)
+  claim KEY...                               pull the board branch, then take KEY (a node slug, #briefs or #context) for
+                                             you; fails while someone else holds it
+  release                                    commit .arch/, pull and push the board branch, then free your locks
   unlock KEY [--force]                       free KEY without releasing; another person's lock only with --force
 Git and hooks (no index needed):
-  sync                                       fetch refs/arch/locks, set up the index.json merge driver, refresh board.js,
-                                             print LOCKS
+  sync                                       fetch refs/arch/locks, set up the merge driver, check out a missing board
+                                             branch, pull it, refresh board.js, print LOCKS
   can-edit FILE                              exit 1 when a lock keeps you from editing FILE (a hook's guard)
   merge-index BASE OURS THEIRS               git merge driver for index.json: nodes by slug, connections by ends and type
 
@@ -46,8 +48,9 @@ nodes' revisions (_Arch revision: slug=N, slug=N_); a node whose revision grew s
 records them too (seen). _Superseded by_ retires a brief; _Followed up by_ does not — finalize bumps the old brief's
 revisions instead, so later changes to its nodes outdate it again, except nodes a brief that follows it up covers:
 those changes outdate only the newest brief in the chain.
-A shared board keeps refs/arch/locks on the remote: one commit holding locks.json {nodes: {KEY: {owner, host, since}},
-released: {KEY: commit}}. You are user.email on this host. A lock changes by a push on top of the tip just fetched,
+A shared board lives on a branch of its own (.arch/ is its worktree, hidden from the code branches through
+.git/info/exclude), so its commits never reach a code branch or a pull request. Its locks are refs/arch/locks on the
+remote: one commit holding locks.json {branch, nodes: {KEY: {owner, host, since}}, released: {KEY: commit}}. You are user.email on this host. A lock changes by a push on top of the tip just fetched,
 which the remote refuses once anyone else moved it, so of two people claiming one node only one gets it. set, add-node
 and archive need your lock on the node; released[KEY] is the commit a release pushed, which claim requires in HEAD.
 A brief names its OpenSpec changes on the first \`- Changes:\` line of its ## OpenSpec Handoff; summary derives each
@@ -67,7 +70,7 @@ const ARGS = {
   disconnect: 'FROM TO [TYPE]',
   rename: 'OLD NEW',
   log: 'SKILL SUMMARY [--node SLUG]... [--full]',
-  share: '',
+  share: '[BRANCH]',
   claim: 'KEY...',
   release: '',
   unlock: 'KEY [--force]',
@@ -176,7 +179,7 @@ const fetchLocks = () => git(['fetch', '-q', remote(), `+${LOCKS_REF}:${LOCKS_RE
 const readLocks = () => {
   try {
     const data = JSON.parse(git(['cat-file', '-p', `${LOCKS_REF}:locks.json`]).out)
-    return { nodes: data.nodes ?? {}, released: data.released ?? {} }
+    return { branch: data.branch, nodes: data.nodes ?? {}, released: data.released ?? {} }
   } catch {
     return null
   }
@@ -224,6 +227,84 @@ const gitFiles = () => {
   addLines(GITIGNORE, ['index.lock', '*.tmp', 'board.html', 'board.js'])
 }
 
+const boardGit = args => git(['-C', ARCH, ...args])
+const boardBranch = () => readLocks()?.branch ?? null
+
+// .arch/ checked out as a worktree of the board branch
+const isBoard = name => {
+  const top = boardGit(['rev-parse', '--show-toplevel'])
+  return top.ok && realPath(top.out) === realPath(ARCH) && boardGit(['symbolic-ref', '-q', '--short', 'HEAD']).out === name
+}
+const requireBoard = () => {
+  const name = boardBranch() ?? fail(`${LOCKS_REF} names no board branch — run /arch-share`)
+  return isBoard(name) ? name : fail(`${ARCH}/ is not a worktree of the board branch ${name} — run /arch-share to set this clone up`)
+}
+
+// Keeps .arch/ out of the code branches: hidden in this clone, and its removal staged where a code branch tracked it.
+const hideFromCode = () => {
+  const exclude = gitOrFail(['rev-parse', '--git-path', 'info/exclude'])
+  fs.mkdirSync(path.dirname(exclude), { recursive: true })
+  addLines(exclude, [`/${ARCH}/`])
+  if (!git(['ls-files', '--', ARCH]).out) return ''
+  git(['rm', '-r', '-q', '--cached', '--', ARCH])
+  return ` — ${branch() || 'this branch'} tracked ${ARCH}/: its removal is staged, commit it the way this project takes changes`
+}
+
+// Turns .arch/ into a worktree of a new branch that holds only the board, and pushes it. Undone on failure.
+const makeBoard = name => {
+  const aside = `${ARCH}.share-${Date.now()}`
+  fs.renameSync(ARCH, aside)
+  const step = args => {
+    const r = git(args)
+    if (r.ok) return
+    git(['worktree', 'remove', '--force', ARCH])
+    fs.rmSync(ARCH, { recursive: true, force: true })
+    git(['branch', '-D', name])
+    fs.renameSync(aside, ARCH)
+    fail(`git ${args.join(' ')}: ${r.err} — ${ARCH}/ is back as it was`)
+  }
+  step(['worktree', 'add', '-q', '--no-checkout', '--detach', ARCH])
+  // HEAD on the unborn branch: nothing of the code is checked out or indexed
+  step(['-C', ARCH, 'symbolic-ref', 'HEAD', `refs/heads/${name}`])
+  step(['-C', ARCH, 'read-tree', '--empty'])
+  fs.cpSync(aside, ARCH, { recursive: true })
+  gitFiles()
+  step(['-C', ARCH, 'add', '-A'])
+  step(['-C', ARCH, 'commit', '-q', '-m', 'arch: the board'])
+  step(['-C', ARCH, 'push', '-q', '-u', remote(), name])
+  fs.rmSync(aside, { recursive: true, force: true })
+}
+
+// Puts the board branch at .arch/; a plain .arch/ already there is kept aside. Says where it went, if anywhere.
+const joinBoard = name => {
+  if (isBoard(name)) return ''
+  const fetched = git(['fetch', '-q', remote(), name])
+  if (!fetched.ok) fail(`cannot fetch the board branch ${name} from ${remote()}: ${fetched.err}`)
+  git(['worktree', 'prune'])
+  const aside = stat(ARCH) ? `${ARCH}.local-${Date.now()}` : ''
+  if (aside) fs.renameSync(ARCH, aside)
+  const added = git(['worktree', 'add', '-q', ARCH, name])
+  if (!added.ok) {
+    if (aside) fs.renameSync(aside, ARCH)
+    fail(`git worktree add ${ARCH} ${name}: ${added.err}`)
+  }
+  return aside ? ` — the ${ARCH}/ that was here is now ${aside}` : ''
+}
+
+// Commits what this clone changed on the board, then merges what the others released: null, or why it failed
+// (the merge is undone then).
+const pullBoard = (name, message) => {
+  boardGit(['add', '-A'])
+  if (!boardGit(['diff', '--cached', '--quiet']).ok) {
+    const committed = boardGit(['commit', '-q', '-m', message])
+    if (!committed.ok) return committed.err
+  }
+  const pulled = boardGit(['pull', '-q', '--no-rebase', '--ff', '--no-edit', remote(), name])
+  if (pulled.ok) return null
+  boardGit(['merge', '--abort'])
+  return pulled.err
+}
+
 const checkKey = key => SLUG.test(key) || BOARD_KEYS.includes(key) || fail(`KEY must be a node slug or one of ${BOARD_KEYS.join(', ')}`)
 
 // On a shared board a node file changes only under its holder's lock.
@@ -260,7 +341,8 @@ const locksReport = () => {
   const who = me()
   const held = Object.entries(locks.nodes).sort(([a], [b]) => cmp(a, b))
   return [
-    `LOCKS shared via ${remote()} ${LOCKS_REF} — you are ${who.owner} on ${who.host}; ${held.length || 'none'} held`,
+    `LOCKS shared via ${remote()} ${LOCKS_REF}, board branch ${locks.branch ?? 'none'} — you are ${who.owner} on ${who.host}; ` +
+      `${held.length || 'none'} held`,
     ...held.map(([key, h]) => `  ${key} — ${isMine(h, who) ? `yours since ${h.since}` : holderText(h)}`),
   ]
 }
@@ -298,12 +380,47 @@ const STANDALONE = {
     const fetched = fetchLocks()
     if (!shared()) return 'LOCKS not shared'
     setUpGit()
-    // the board page shows locks too
-    try {
-      const data = load().data
-      if (data) writeBoard(data)
-    } catch {}
-    return [...(fetched.ok ? [] : [`SYNC_FAILED — showing the locks last fetched: ${fetched.err}`]), ...locksReport()].join('\n')
+    const out = fetched.ok ? [] : [`SYNC_FAILED — showing the locks last fetched: ${fetched.err}`]
+    const name = boardBranch()
+    // a clone without .arch/ gets the board; one with a plain .arch/ is left to /arch-share, which moves it aside
+    if (name && !stat(ARCH)) {
+      joinBoard(name)
+      hideFromCode()
+    }
+    if (name && isBoard(name)) {
+      lock()
+      const failed = pullBoard(name, `arch: work in progress — ${me().owner}`)
+      if (failed) out.push(`BOARD_PULL_FAILED — the board branch ${name} did not merge, so it was left as it was: ${failed}`)
+      // the board page shows the locks and what the others released
+      try {
+        const data = load().data
+        if (data) writeBoard(data)
+      } catch {}
+    } else if (name) out.push(`BOARD_NOT_SET_UP — ${ARCH}/ is not a worktree of the board branch ${name}: run /arch-share`)
+    return [...out, ...locksReport()].join('\n')
+  },
+
+  share([name = 'arch']) {
+    if (!git(['rev-parse', '--git-dir']).ok) fail('not a git repository')
+    if (stat(ARCH)?.isDirectory()) lock()
+    if (shared() || fetchLocks().ok) {
+      const existing = boardBranch() ?? fail(`${LOCKS_REF} names no board branch`)
+      const moved = joinBoard(existing)
+      setUpGit()
+      return `OK this clone works on the shared board: ${ARCH}/ is the branch ${existing}${moved}${hideFromCode()}`
+    }
+    if (!stat(INDEX)) fail(`no board here yet — run /arch:new first`)
+    if (!git(['check-ref-format', '--branch', name]).ok) fail(`${name} is not a valid branch name`)
+    setUpGit()
+    if (!isBoard(name)) {
+      if (git(['ls-remote', '--exit-code', '--heads', remote(), name]).ok || git(['rev-parse', '-q', '--verify', `refs/heads/${name}`]).ok)
+        fail(`a branch ${name} already exists — name the board's own branch: /arch-share <branch>`)
+      makeBoard(name)
+    }
+    const note = hideFromCode()
+    if (!pushLocks({ branch: name, nodes: {}, released: {} }, 'share the arch board'))
+      fail(`cannot push ${LOCKS_REF} to ${remote()}; the branch ${name} is pushed — run /arch-share again`)
+    return `OK shared: ${ARCH}/ is now the branch ${name} on ${remote()}, the locks are ${LOCKS_REF}${note}`
   },
 
   'can-edit'([file]) {
@@ -913,27 +1030,22 @@ const COMMANDS = {
     return `OK logged ${JSON.stringify(entry)}`
   },
 
-  share() {
-    if (!git(['rev-parse', '--git-dir']).ok) fail('not a git repository')
-    if (shared() || fetchLocks().ok) return `OK already shared via ${remote()} ${LOCKS_REF}`
-    setUpGit()
-    gitFiles()
-    if (!pushLocks({ nodes: {}, released: {} }, 'share the arch board')) fail(`cannot push ${LOCKS_REF} to ${remote()}`)
-    return `OK shared via ${remote()} ${LOCKS_REF} — commit and push .arch/ so the others get the board`
-  },
-
   claim(data, keys) {
     keys.forEach(checkKey)
     if (!shared() && !fetchLocks().ok) return 'OK not shared — no lock needed'
+    const name = requireBoard()
     setUpGit()
     const who = me()
+    // the node as the others last released it
+    const failed = pullBoard(name, `arch: work in progress — ${who.owner}`)
+    if (failed) fail(`pulling the board branch ${name} failed and was undone — run git -C ${ARCH} pull, resolve it, then claim again:\n${failed}`)
     return changeLocks(`claim ${keys.join(' ')} — ${who.owner}`, locks => {
       for (const key of keys) {
         const holder = locks.nodes[key]
         if (holder && !isMine(holder, who)) fail(`${key} is locked by ${holderText(holder)}`)
         const at = locks.released[key]
-        if (at && !git(['merge-base', '--is-ancestor', at, 'HEAD']).ok)
-          fail(`${key} was last released in ${at.slice(0, 7)}, which this branch lacks — git pull, then claim again`)
+        if (at && !boardGit(['merge-base', '--is-ancestor', at, 'HEAD']).ok)
+          fail(`${key} was released in ${at.slice(0, 7)}, which ${name} here does not have yet — claim again in a moment`)
       }
       for (const key of keys) locks.nodes[key] ??= { owner: who.owner, host: who.host, since: now() }
       return `OK ${keys.join(', ')} held by ${who.owner} on ${who.host}`
@@ -942,37 +1054,29 @@ const COMMANDS = {
 
   release() {
     if (!shared()) return 'OK not shared — nothing to release'
+    const name = requireBoard()
     setUpGit()
     gitFiles()
-    const [name, upstreamRemote, upstream] = [branch(), remote(), git(['config', `branch.${branch()}.merge`]).out]
-    if (!name || !upstream) fail('this branch has no upstream — git push -u once, then release again')
-    // release pushes .arch/ work only: other unpushed commits are the user's to push
-    const others = git(['log', '--no-merges', '--format=%h %s', '@{u}..HEAD', '--', '.', `:(exclude)${ARCH}`]).out
-    if (others) fail(`unpushed commits outside ${ARCH}/ — push them yourself, then release again:\n${others}`)
     const who = me()
     const mine = Object.entries(readLocks()?.nodes ?? {})
       .filter(([, h]) => isMine(h, who))
       .map(([key]) => key)
-    gitOrFail(['add', '-A', '--', ARCH])
-    if (!git(['diff', '--cached', '--quiet', '--', ARCH]).ok) gitOrFail(['commit', '-q', '-m', `arch: ${mine.join(', ') || 'board'}`, '--', ARCH])
     for (let tries = 0; ; tries++) {
-      const pulled = git(['pull', '-q', '--no-rebase', '--ff', '--no-edit', upstreamRemote, upstream])
-      if (!pulled.ok) {
-        git(['merge', '--abort'])
-        fail(`git pull failed; your locks are kept — integrate by hand, then release again:\n${pulled.err}`)
-      }
-      const pushed = git(['push', '-q', upstreamRemote, `HEAD:${upstream}`])
+      const failed = pullBoard(name, `arch: ${mine.join(', ') || 'board'} — ${who.owner}`)
+      if (failed)
+        fail(`pulling the board branch ${name} failed and was undone; your locks are kept — run git -C ${ARCH} pull, resolve it, then /arch-release:\n${failed}`)
+      const pushed = boardGit(['push', '-q', remote(), `HEAD:${name}`])
       if (pushed.ok) break
-      if (tries === 2) fail(`git push failed; your locks are kept:\n${pushed.err}`)
+      if (tries === 2) fail(`git push to ${name} failed; your locks are kept:\n${pushed.err}`)
     }
-    const head = gitOrFail(['rev-parse', 'HEAD'])
+    const head = boardGit(['rev-parse', 'HEAD']).out
     return changeLocks(`release — ${who.owner}`, locks => {
       const freed = Object.keys(locks.nodes).filter(key => isMine(locks.nodes[key], who))
       for (const key of freed) {
         delete locks.nodes[key]
         locks.released[key] = head
       }
-      return `OK pushed ${head.slice(0, 7)} to ${upstreamRemote}; freed ${freed.join(', ') || 'nothing'}`
+      return `OK pushed ${head.slice(0, 7)} to ${name} on ${remote()}; freed ${freed.join(', ') || 'nothing'}`
     })
   },
 
@@ -993,6 +1097,10 @@ const COMMANDS = {
 
 // index.json with its sessions, or the line that says why there is none
 const load = () => {
+  // a clone of a shared board works on the board branch only, never on a stale or missing copy
+  const name = shared() ? boardBranch() : null
+  if (name && !isBoard(name))
+    return { message: `INDEX_INVALID — this project's board is shared on the branch ${name}, and ${ARCH}/ here is not its worktree: run /arch-share` }
   if (!stat(INDEX)?.isFile()) return { message: `NO_ARCH_SESSION — ${INDEX} not found in ${process.cwd()}` }
   let data = null
   let invalid = null
