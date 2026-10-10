@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const DOC = `Deterministic helpers for the architector skills. Owns .arch/index.json. Run from the project root.
 
@@ -10,6 +11,8 @@ Read (always exit 0, safe to inject into a skill):
   summary                                    state report: counts, stage, finalize gate, map and brief freshness, problems,
                                              implementation state of the briefs (reads openspec/changes/, read-only)
   check                                      consistency problems only
+  board [--open]                             write .arch/board.js and, when missing or outdated, .arch/board.html;
+                                             --open shows the page. Every write command rewrites board.js itself
 Write (exit 1 with ERROR: on bad input, nothing written; one writer at a time through .arch/index.lock):
   init PROJECT                               create index.json (fails if it exists)
   add-node SLUG NAME PRIORITY SUMMARY        register an existing ideas/SLUG.md as a live raw-idea node
@@ -28,7 +31,8 @@ Shared board (git; every command a no-op that says so while the board is not sha
   release                                    commit .arch/, pull, push, then free your locks
   unlock KEY [--force]                       free KEY without releasing; another person's lock only with --force
 Git and hooks (no index needed):
-  sync                                       fetch refs/arch/locks, set up the index.json merge driver, print LOCKS
+  sync                                       fetch refs/arch/locks, set up the index.json merge driver, refresh board.js,
+                                             print LOCKS
   can-edit FILE                              exit 1 when a lock keeps you from editing FILE (a hook's guard)
   merge-index BASE OURS THEIRS               git merge driver for index.json: nodes by slug, connections by ends and type
 
@@ -70,6 +74,7 @@ const ARGS = {
   sync: '',
   'can-edit': 'FILE',
   'merge-index': 'BASE OURS THEIRS',
+  board: '[--open]',
 }
 
 const ARCH = '.arch'
@@ -78,6 +83,9 @@ const SESSIONS = `${ARCH}/sessions.jsonl`
 const ATTRIBUTES = `${ARCH}/.gitattributes`
 const GITIGNORE = `${ARCH}/.gitignore`
 const LOCK = `${ARCH}/index.lock`
+const BOARD_PAGE = `${ARCH}/board.html`
+const BOARD_DATA = `${ARCH}/board.js`
+const TEMPLATE = fileURLToPath(new URL('board.html', import.meta.url))
 const LOCKS_REF = 'refs/arch/locks'
 // lock keys besides node slugs: the feature briefs with the todo list, and project-context.md
 const BOARD_KEYS = ['#briefs', '#context']
@@ -213,7 +221,7 @@ const setUpGit = () => {
 }
 const gitFiles = () => {
   addLines(ATTRIBUTES, ['sessions.jsonl merge=union', 'index.json merge=arch-index'])
-  addLines(GITIGNORE, ['index.lock', '*.tmp'])
+  addLines(GITIGNORE, ['index.lock', '*.tmp', 'board.html', 'board.js'])
 }
 
 const checkKey = key => SLUG.test(key) || BOARD_KEYS.includes(key) || fail(`KEY must be a node slug or one of ${BOARD_KEYS.join(', ')}`)
@@ -290,6 +298,11 @@ const STANDALONE = {
     const fetched = fetchLocks()
     if (!shared()) return 'LOCKS not shared'
     setUpGit()
+    // the board page shows locks too
+    try {
+      const data = load().data
+      if (data) writeBoard(data)
+    } catch {}
     return [...(fetched.ok ? [] : [`SYNC_FAILED — showing the locks last fetched: ${fetched.err}`]), ...locksReport()].join('\n')
   },
 
@@ -744,7 +757,53 @@ const setSection = (file, title, value) => {
   write(file, body.join(text.includes('\r\n') ? '\r\n' : '\n'))
 }
 
+// Opens a file with the system's default app, without waiting for it.
+const openFile = file => {
+  const [cmd, ...args] =
+    process.platform === 'darwin' ? ['open', file] : process.platform === 'win32' ? ['cmd', '/c', 'start', '', file] : ['xdg-open', file]
+  spawn(cmd, args, { detached: true, stdio: 'ignore' }).on('error', () => undefined).unref()
+}
+
+// A page opened from disk cannot read index.json, but it can load a script next to it: board.html is the plugin's
+// page, copied once (again only when the plugin's changes), and polls board.js, the board state this writes.
+const writeBoard = data => {
+  const page = read(TEMPLATE)
+  if (page !== null && read(BOARD_PAGE) !== page) fs.writeFileSync(BOARD_PAGE, page)
+  const report = summary(data)
+  const locks = shared() ? readLocks() : null
+  const who = locks ? me() : null
+  const rev = revs(data.sessions)
+  const board = {
+    project: data.project ?? 'arch',
+    written: now(),
+    stage: stage(data.nodes),
+    revision: data.sessions.length,
+    gate: /^FINALIZE_GATE (.*)$/m.exec(report)?.[1] ?? '',
+    nodes: data.nodes.map(n => {
+      const holder = locks?.nodes[n.slug]
+      return {
+        ...n,
+        rev: rev.get(n.slug) ?? 0,
+        lock: holder ? { who: isMine(holder, who) ? 'you' : holder.owner, host: holder.host, since: holder.since } : null,
+        text: read(nodePath(n)) ?? '',
+      }
+    }),
+    connections: data.connections,
+    problems: problems(data),
+    report,
+  }
+  // derived and rewritten often: no lock, no temp file; a page that reads it half-written skips that poll
+  fs.writeFileSync(BOARD_DATA, `archBoard(${JSON.stringify(board)})\n`)
+  addLines(GITIGNORE, ['board.html', 'board.js'])
+}
+
 const COMMANDS = {
+  board(data, args, { open = false }) {
+    writeBoard(data)
+    if (open) openFile(path.resolve(BOARD_PAGE))
+    return `OK ${BOARD_PAGE} shows the board — ${pathToFileURL(path.resolve(BOARD_PAGE)).href}`
+  },
+
   init(data, [project]) {
     if (data !== null) fail(`${INDEX} already exists`)
     fs.mkdirSync(`${ARCH}/ideas`, { recursive: true })
@@ -932,6 +991,34 @@ const COMMANDS = {
   },
 }
 
+// index.json with its sessions, or the line that says why there is none
+const load = () => {
+  if (!stat(INDEX)?.isFile()) return { message: `NO_ARCH_SESSION — ${INDEX} not found in ${process.cwd()}` }
+  let data = null
+  let invalid = null
+  try {
+    data = JSON.parse(read(INDEX))
+  } catch (e) {
+    invalid = `${INDEX} is not valid JSON: ${e.message}`
+  }
+  const logged = []
+  for (const [i, line] of lines(read(SESSIONS)).entries()) {
+    try {
+      if (line.trim()) logged.push(JSON.parse(line))
+    } catch (e) {
+      invalid ??= `${SESSIONS} line ${i + 1} is not valid JSON: ${e.message}`
+    }
+  }
+  if (!invalid && isObject(data) && Array.isArray(data.sessions ?? [])) {
+    legacySessions = data.sessions ?? []
+    data.sessions = [...legacySessions, ...logged]
+  }
+  if (!invalid && schemaError(data)) invalid = `${INDEX}: ${schemaError(data)}`
+  if (invalid) return { message: `INDEX_INVALID — ${invalid}` }
+  for (const key of ['nodes', 'connections', 'sessions']) data[key] ??= []
+  return { data }
+}
+
 const main = argv => {
   const [cmd, ...rest] = argv
   if (cmd === '-h' || cmd === '--help') return console.log(DOC)
@@ -945,6 +1032,7 @@ const main = argv => {
     if (options && word === '--') options = false
     else if (options && cmd === 'log' && word === '--full') values.full = true
     else if (options && cmd === 'unlock' && word === '--force') values.force = true
+    else if (options && cmd === 'board' && word === '--open') values.open = true
     else if (options && cmd === 'log' && word === '--node') values.node.push(rest[++i] ?? fail("option '--node' needs a SLUG"))
     else args.push(word)
   }
@@ -954,43 +1042,24 @@ const main = argv => {
   if (args.length < words.filter(w => !w.startsWith('[')).length || args.length > most) fail(`usage: ${cmd} ${ARGS[cmd]}`.trim())
   if (Object.hasOwn(STANDALONE, cmd)) return console.log(STANDALONE[cmd](args))
 
-  const reading = cmd === 'summary' || cmd === 'check'
+  const reading = ['summary', 'check', 'board'].includes(cmd)
   if (!reading && stat(ARCH)?.isDirectory()) lock()
-  let data = null
-  if (stat(INDEX)?.isFile()) {
-    let invalid = null
-    try {
-      data = JSON.parse(read(INDEX))
-    } catch (e) {
-      invalid = `${INDEX} is not valid JSON: ${e.message}`
-    }
-    const logged = []
-    for (const [i, line] of lines(read(SESSIONS)).entries()) {
-      try {
-        if (line.trim()) logged.push(JSON.parse(line))
-      } catch (e) {
-        invalid ??= `${SESSIONS} line ${i + 1} is not valid JSON: ${e.message}`
-      }
-    }
-    if (!invalid && isObject(data) && Array.isArray(data.sessions ?? [])) {
-      legacySessions = data.sessions ?? []
-      data.sessions = [...legacySessions, ...logged]
-    }
-    if (!invalid && schemaError(data)) invalid = `${INDEX}: ${schemaError(data)}`
-    if (invalid) {
-      console.log(`INDEX_INVALID — ${invalid}`)
-      process.exitCode = reading ? 0 : 1
-      return
-    }
-    for (const key of ['nodes', 'connections', 'sessions']) data[key] ??= []
-  } else if (cmd !== 'init') {
-    console.log(`NO_ARCH_SESSION — ${INDEX} not found in ${process.cwd()}`)
+  const { data = null, message } = load()
+  if (message && (cmd !== 'init' || !message.startsWith('NO_ARCH_SESSION'))) {
+    console.log(message)
     process.exitCode = reading ? 0 : 1
     return
   }
   if (cmd === 'summary') console.log(summary(data))
   else if (cmd === 'check') console.log(report(problems(data)).join('\n'))
   else console.log(COMMANDS[cmd](data, args, values))
+  if (!reading) {
+    // the board page follows every write; it is a view, so a failure here never fails the write
+    try {
+      const fresh = load().data
+      if (fresh) writeBoard(fresh)
+    } catch {}
+  }
 }
 
 main(process.argv.slice(2))

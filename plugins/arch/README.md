@@ -72,6 +72,7 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 | Revisit or reopen a decision | `/arch:decide [node]` |
 | Change a node's priority | `/arch:decide [node] priority [level]` |
 | Want a progress snapshot | `/arch:status` |
+| Want to see the board and its dependency graph in the browser | `/arch-board` |
 | Several people will work on the board at once | `/arch-share` (once), then the skills as usual |
 | Want to find gaps or inconsistencies | `/arch:audit` |
 | Checking one node's decisions in context | `/arch:audit [node]` |
@@ -85,6 +86,41 @@ Once installed, all skills are available as `/arch:new`, `/arch:explore`, etc.
 ## Graph Pane
 
 `/arch-graph` opens a side pane with the dependency graph from `.arch/index.json`: nodes grouped into layers by dependency depth (layer 0 has no prerequisites), each with its maturity symbol, priority and `← prerequisites`; nodes caught in a dependency cycle under `cycle`; then shared concerns (`↔`) and conflicts (`⚡`). Press a node (click it, or ctrl+x tab into the pane and Enter) to run `/arch:explore` on it — queued until the current turn ends. It redraws after every `arch.mjs` call, so it follows `/arch:map`, `/arch:decide` and the rest live. In a fullscreen terminal 144+ columns wide it opens by itself when the project has an `.arch/index.json`; run `/arch-graph` again to refresh after editing the index by hand.
+
+## Viewing the Board
+
+`/arch-board` opens the board in your browser, live. The page shows everything `/arch:status` knows, plus the dependency graph, and it updates while you and the skills work. It needs no server and nothing to install: it is `.arch/board.html`, a file you can also open directly or bookmark.
+
+### What you see
+
+- **Header**: project, stage, revision, the time the data was written, and the finalize gate. The gate is green when open, and red with the reasons when closed.
+- **Maturity**: how many nodes are at each level.
+- **Dependency graph**: layers run left to right. Layer 0 has no prerequisites, and each later layer depends on earlier ones. Nodes caught in a dependency cycle sit in a `cycle` column.
+  - Box colour is maturity: grey raw-idea, blue explored, purple decided, green ready. A thick border marks a blocking node, a faded box a deferred one, and 🔒 a locked one.
+  - An arrow is a dependency, from prerequisite to dependent. Grey dashes are a shared concern; red dashes a conflict.
+  - Hover a box or a line for its summary or note.
+- **Nodes**: the table, by priority then maturity. `Rev` counts the sessions that changed the node; `Lock` says who holds it (hover for host and time).
+- **Node file**: the clicked node's file as it is on disk.
+- **Problems**: what `arch.mjs check` reports.
+- **Full state report**: the `arch.mjs summary` the skills read.
+
+### Moving around
+
+- Click a node, in the graph or the table: it, its connections and the nodes at their other end stay lit, the rest dims, and its file opens beside the table. Click it again, click an empty spot or press Esc to clear.
+- `board.html#auth` opens on `auth`.
+- Past 40 nodes the boxes shrink to one line (details on hover); a wide graph scrolls sideways.
+- Untick **live** to freeze the page while you read.
+
+### How it stays current
+
+The page itself never changes. Its data is `.arch/board.js`, which `arch.mjs` rewrites after every write (`set`, `connect`, `log` and the rest) and whenever it fetches the locks. The page reads it every 2 seconds.
+
+The data is a script rather than JSON for a reason: a page opened from disk may load a script beside it, but the browser will not let it read `index.json`.
+
+- A node file edited by hand shows up at the next `arch.mjs` write.
+- On a shared board the page shows your own clone: pull to see what others released. Locks refresh when a session or an `/arch:` skill starts.
+
+`board.html` is created with the board, and copied again only when a plugin update changes it. For a board from an older version, run `/arch-board` once. If the page says `board.js not found`, run `/arch-board`. Both files are listed in `.arch/.gitignore`.
 
 ## Idea Node Maturity
 
@@ -131,7 +167,8 @@ Feature briefs are append-only. Each records the revision of every node it cover
   index.json                  ← all nodes and connections
   sessions.jsonl              ← session history, one line per skill run
   .gitattributes              ← merges sessions.jsonl by union, index.json through arch's merge driver
-  .gitignore                  ← keeps the local write lock out of git
+  .gitignore                  ← keeps the local write lock and the board page out of git
+  board.html, board.js        ← the board page (/arch-board) and the state it shows
   ideas/
     tech-stack.md             ← one file per idea node
     data-model.md

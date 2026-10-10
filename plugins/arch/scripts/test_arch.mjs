@@ -189,6 +189,32 @@ describe('arch.mjs', () => {
     assert.equal(run('log', 'decide', 'x', '--full').code, 1)
   })
 
+  test('every write refreshes board.js; board.html is the plugin page, copied once', () => {
+    const boardJs = path.join(root, '.arch/board.js')
+    run('summary')
+    run('check')
+    assert.ok(!fs.existsSync(boardJs), 'a read command wrote board.js')
+    write(root, 'ideas/sync.md', node('sync', 'core', 'raw-idea', '', '\n## Details\n</script> stays text\n'))
+    assert.equal(run('set', 'sync', 'maturity', 'explored').code, 0)
+    const page = path.join(path.dirname(SCRIPT), 'board.html')
+    assert.equal(fs.readFileSync(path.join(root, '.arch/board.html'), 'utf8'), fs.readFileSync(page, 'utf8'))
+    const state = () => {
+      let found
+      new Function('archBoard', fs.readFileSync(boardJs, 'utf8'))(s => (found = s)) // a script, as the page loads it
+      return found
+    }
+    const sync = () => state().nodes.find(n => n.slug === 'sync')
+    assert.deepEqual([sync().maturity, state().revision], ['explored', 1])
+    has(sync().text, '</script> stays text')
+    has(state().gate, 'closed')
+    assert.equal(run('log', 'explore', 'x', '--node', 'sync').code, 0)
+    assert.deepEqual([state().revision, sync().rev], [2, 1])
+    has(fs.readFileSync(path.join(root, '.arch/.gitignore'), 'utf8'), 'board.js')
+    // the page's own script compiles
+    const code = /<script>([\s\S]*?)<\/script>/.exec(fs.readFileSync(page, 'utf8'))[1]
+    assert.doesNotThrow(() => new Function(code))
+  })
+
   test('freshness survives a git merge that interleaves sessions', () => {
     // clone A: explore sync, full map, brief at stack=0, sync=1; clone B: decide stack — the union merge put B's line first
     const day = { date: '2026-10-10', summary: 'x' }

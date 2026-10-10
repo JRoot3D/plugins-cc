@@ -26,11 +26,11 @@ const explore = ($: EngineInterface, slug: string) => {
   void $.command.run({ command: 'arch:explore', args: slug }).catch(err => $.ui.toast(`/arch:explore failed: ${err}`))
 }
 
-const arch = ($: EngineInterface, ...args: string[]) => $.process.run(['node', `${$.plugin.root}/scripts/arch.mjs`, ...args])
+const arch = ($: EngineInterface, args: string[]) => $.process.run(['node', `${$.plugin.root}/scripts/arch.mjs`, ...args])
 
 // Fetches refs/arch/locks (a shared board's locks) and shows the ones you hold; resolves the LOCKS block, if shared.
 const sync = async ($: EngineInterface) => {
-  const block = LOCKS.exec((await arch($, 'sync')).stdout)?.[0]
+  const block = LOCKS.exec((await arch($, ['sync'])).stdout)?.[0]
   const mine = (block ?? '').split(/\r?\n/).flatMap(line => /^ {2}(\S+) — yours/.exec(line)?.[1] ?? [])
   $.ui.status(mine.length ? `arch: holding ${mine.join(', ')}` : undefined)
   return block
@@ -39,8 +39,16 @@ const sync = async ($: EngineInterface) => {
 // The reason a lock keeps you from editing file, or undefined
 const locked = async ($: EngineInterface, file: string) => {
   if (!ARCH_FILE.test(file)) return undefined
-  const { exitCode, stdout, stderr } = await arch($, 'can-edit', file)
+  const { exitCode, stdout, stderr } = await arch($, ['can-edit', file])
   return exitCode === 0 ? undefined : `${$.plugin.name}: ${(stderr || stdout).replace(/^ERROR: /, '').trim()}`
+}
+
+// Runs an arch.mjs command the person typed, then refreshes the locks it may have changed.
+const typed = async ($: EngineInterface, args: string[]) => {
+  const { exitCode, stdout, stderr } = await arch($, args)
+  await sync($).catch(() => undefined)
+
+  return { text: (exitCode === 0 ? stdout : stderr || stdout).trim() }
 }
 
 // Dependency depth: 0 without prerequisites, else one past the deepest. Nodes in or behind a cycle never settle.
@@ -61,6 +69,7 @@ const levels = (slugs: string[], prereqs: Map<string, string[]>) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'arch-graph', description: 'Show the arch dependency graph (.arch/index.json) in a pane' })
+    await $.command.register({ name: 'arch-board', description: 'Open .arch/board.html: the board state and dependency graph, live in the browser' })
     await $.command.register({ name: 'arch-share', description: 'Share this arch board through git: per-node locks on refs/arch/locks' })
     if (await $.fs.exists(INDEX)) {
       void open($)
@@ -77,12 +86,13 @@ export const register: Register = on => {
     return { text: 'Arch graph pane opened.' }
   })
 
-  on('command.run', { command: 'arch-share' }, async $ => {
-    const { exitCode, stdout, stderr } = await arch($, 'share')
-    if (exitCode === 0) await sync($)
+  on('command.run', { command: 'arch-board' }, async $ => {
+    const { exitCode, stdout, stderr } = await arch($, ['board', '--open'])
 
-    return { text: (exitCode === 0 ? stdout : stderr).trim() }
+    return { text: (exitCode === 0 ? stdout : stderr || stdout).trim() }
   })
+
+  on('command.run', { command: 'arch-share' }, $ => typed($, ['share']))
 
   // A skill's Current State shows the locks as last fetched: fetch them now and put the fresh block in its place.
   on('skill.prompt', async ($, e, next) => {

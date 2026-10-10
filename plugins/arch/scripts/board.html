@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch board</title>
+<style>
+  :root {
+    --bg: #f6f6f3; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #dcdcd7;
+    --raw-idea: #8a8f98; --explored: #3a7fc1; --decided: #8155c6; --ready: #2c9658;
+    --dep: #55595f; --conflict: #cf4a3e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141517; --panel: #1d1f22; --text: #e7e7ea; --muted: #9b9ea5; --line: #33363b;
+      --raw-idea: #9aa0a8; --explored: #5b9de0; --decided: #a382e6; --ready: #4cb87a;
+      --dep: #b3b6bc; --conflict: #ec6a5e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 16px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 20px; }
+  h2 { margin: 0 0 10px; font-size: 15px; }
+  .muted { color: var(--muted); }
+  .gate { padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+  .gate.open { color: var(--ready); background: color-mix(in srgb, var(--ready) 15%, transparent); }
+  .gate.closed { color: var(--conflict); background: color-mix(in srgb, var(--conflict) 13%, transparent); }
+  .auto { margin-left: auto; }
+  main { display: grid; gap: 16px; padding: 16px; }
+  section { min-width: 0; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  .bar { display: flex; height: 10px; overflow: hidden; border-radius: 5px; background: var(--line); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--muted); }
+  .dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; }
+  .line { display: inline-block; width: 22px; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--dep); }
+  .graph { overflow: auto; }
+  .graph svg { display: block; }
+  .graph text { fill: var(--text); }
+  .node { cursor: pointer; }
+  .node rect.box { fill: var(--panel); stroke-width: 1.5; }
+  .node.blocking rect.box { stroke-width: 3; }
+  svg.focus .node:not(.near), svg.focus .edge:not(.near) { opacity: 0.12; }
+  svg.focus .edge.near { stroke-width: 2.5; }
+  .node.selected rect.box { stroke-width: 4; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 6px 8px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; border-top: 0; }
+  td.nowrap { white-space: nowrap; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover, tbody tr.selected { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .table { overflow-x: auto; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .problems { margin: 0; padding-left: 18px; color: var(--conflict); }
+  summary { cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="project"></h1>
+  <span class="muted" id="meta"></span>
+  <span class="gate" id="gate"></span>
+  <span class="muted" id="status"></span>
+  <label class="auto muted"><input type="checkbox" id="auto" checked> live</label>
+</header>
+<main>
+  <section>
+    <h2>Maturity</h2>
+    <div class="bar" id="bar"></div>
+    <div class="legend" id="maturity"></div>
+  </section>
+  <section>
+    <h2>Dependency graph</h2>
+    <div class="graph" id="graph"></div>
+    <div class="legend">
+      <span><span class="line"></span>dependency: prerequisite → dependent</span>
+      <span><span class="line" style="border-top-style: dashed; border-color: var(--raw-idea)"></span>shared concern</span>
+      <span><span class="line" style="border-top-style: dashed; border-color: var(--conflict)"></span>conflict</span>
+      <span>thick border: blocking · 🔒 locked</span>
+    </div>
+  </section>
+  <div class="cols">
+    <section>
+      <h2>Nodes</h2>
+      <div class="table"><table id="nodes"></table></div>
+    </section>
+    <section>
+      <h2 id="detail-title">Node file</h2>
+      <pre id="detail" class="muted">Click a node to read its file.</pre>
+    </section>
+  </div>
+  <section>
+    <h2>Problems</h2>
+    <ul class="problems" id="problems"></ul>
+  </section>
+  <section>
+    <details id="report-box">
+      <summary>Full state report (arch.mjs summary)</summary>
+      <pre id="report"></pre>
+    </details>
+  </section>
+</main>
+<script>
+  // board.js, which arch.mjs rewrites after every write, calls archBoard(state); the page itself never changes.
+  const MATURITY = ['raw-idea', 'explored', 'decided', 'ready']
+  const PRIORITY = ['blocking', 'core', 'extension', 'deferred']
+  const GAP_X = 80, PAD = 16, HEAD = 22
+  const SVG = 'http://www.w3.org/2000/svg'
+
+  const byId = id => document.getElementById(id)
+  const el = (tag, attrs = {}, ...kids) => {
+    const node = tag.startsWith('svg:') ? document.createElementNS(SVG, tag.slice(4)) : document.createElement(tag)
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value)
+    node.append(...kids)
+    return node
+  }
+  const color = maturity => `var(--${MATURITY.includes(maturity) ? maturity : 'raw-idea'})`
+  const rank = (list, value) => (list.includes(value) ? list.indexOf(value) : list.length)
+  const order = (a, b) => rank(PRIORITY, a.priority) - rank(PRIORITY, b.priority) || rank(MATURITY, a.maturity) - rank(MATURITY, b.maturity) || a.slug.localeCompare(b.slug)
+  const lockText = lock => `${lock.who} on ${lock.host}, since ${lock.since}`
+  const fit = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+  // per-viewer conveniences only: the board itself comes from board.js
+  const saved = (key, value) => {
+    try {
+      if (value === undefined) return localStorage.getItem(`arch-board:${key}`)
+      localStorage.setItem(`arch-board:${key}`, value)
+    } catch {}
+  }
+
+  let board = null
+  // board.html#slug opens on that node
+  let selected = decodeURIComponent(location.hash.slice(1)) || saved('selected') || null
+
+  function render() {
+    document.title = `${board.project} · arch board`
+    byId('project').textContent = board.project
+    byId('meta').textContent = `${board.stage} stage · revision ${board.revision} · ${board.nodes.length} nodes · written ${board.written}`
+    byId('gate').textContent = `finalize gate ${board.gate}`
+    byId('gate').className = `gate ${board.gate.startsWith('open') ? 'open' : 'closed'}`
+
+    byId('bar').replaceChildren()
+    byId('maturity').replaceChildren()
+    for (const maturity of MATURITY) {
+      const count = board.nodes.filter(n => n.maturity === maturity).length
+      if (count) byId('bar').append(el('div', { style: `flex: ${count}; background: ${color(maturity)}`, title: `${maturity}: ${count}` }))
+      byId('maturity').append(el('span', {}, el('span', { class: 'dot', style: `background: ${color(maturity)}` }), `${maturity} ${count}`))
+    }
+
+    // layers by dependency depth: 0 has no prerequisites; nodes in or behind a cycle never settle
+    const live = new Set(board.nodes.map(n => n.slug))
+    const links = board.connections.filter(c => live.has(c.from) && live.has(c.to))
+    const prereqs = new Map()
+    for (const c of links) if (c.type === 'dependency') prereqs.set(c.to, [...(prereqs.get(c.to) ?? []), c.from])
+    const level = new Map()
+    for (let moved = true; moved; ) {
+      moved = false
+      for (const n of board.nodes) {
+        const before = prereqs.get(n.slug) ?? []
+        if (level.has(n.slug) || !before.every(p => level.has(p))) continue
+        level.set(n.slug, Math.max(-1, ...before.map(p => level.get(p))) + 1)
+        moved = true
+      }
+    }
+    const columns = []
+    const cycle = Math.max(-1, ...level.values()) + 1
+    for (const n of [...board.nodes].sort(order)) (columns[level.has(n.slug) ? level.get(n.slug) : cycle] ??= []).push(n)
+    // Fewer crossings: sweep the layers down and up, placing each node at the mean row of its prerequisites (down)
+    // or dependents (up); a node with none keeps its row.
+    const up = new Map()
+    const down = new Map()
+    for (const c of links)
+      if (c.type === 'dependency') {
+        up.set(c.to, [...(up.get(c.to) ?? []), c.from])
+        down.set(c.from, [...(down.get(c.from) ?? []), c.to])
+      }
+    for (let sweep = 0; sweep < 6; sweep++) {
+      const toward = sweep % 2 ? down : up
+      for (const i of sweep % 2 ? [...columns.keys()].reverse() : columns.keys()) {
+        const row = new Map(columns.flatMap(column => column.map((n, r) => [n.slug, r])))
+        const mean = n => {
+          const rows = (toward.get(n.slug) ?? []).map(s => row.get(s))
+          return rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : row.get(n.slug)
+        }
+        columns[i].sort((a, b) => mean(a) - mean(b))
+      }
+    }
+    // past 40 nodes: one-line boxes, the rest in the tooltip
+    const compact = board.nodes.length > 40
+    const W = compact ? 170 : 200
+    const H = compact ? 30 : 52
+    const GAP_Y = compact ? 10 : 16
+    const place = new Map()
+    columns.forEach((column, i) =>
+      column.forEach((n, row) => place.set(n.slug, { x: PAD + i * (W + GAP_X), y: PAD + HEAD + row * (H + GAP_Y), column: i })))
+
+    // room on the right for a same-layer loop out of the last column
+    const width = PAD * 2 + Math.max(1, columns.length) * (W + GAP_X) - GAP_X + 50
+    const height = PAD * 2 + HEAD + Math.max(1, ...columns.map(c => c.length)) * (H + GAP_Y) - GAP_Y
+    const svg = el('svg:svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': 'Dependency graph' })
+    svg.append(
+      el('svg:defs', {}, el('svg:marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto' },
+        el('svg:path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--dep)' }))),
+    )
+    columns.forEach((_, i) =>
+      svg.append(el('svg:text', { x: PAD + i * (W + GAP_X), y: PAD + 12, 'font-size': 12, style: 'fill: var(--muted)' }, i === cycle ? 'cycle' : `layer ${i}`)))
+
+    // each kind leaves and enters a box at its own height, so two kinds between one pair stay apart
+    const ANCHOR = { dependency: H / 2, 'shared-concern': H * 0.25, conflict: H * 0.75 }
+    for (const c of links) {
+      const a = place.get(c.from)
+      const b = place.get(c.to)
+      const ya = a.y + (ANCHOR[c.type] ?? H / 2)
+      const yb = b.y + (ANCHOR[c.type] ?? H / 2)
+      let d
+      if (a.column === b.column) {
+        // same layer: loop out on the right
+        const x = a.x + W
+        d = `M${x},${ya} C${x + 46},${ya} ${x + 46},${yb} ${x},${yb}`
+      } else {
+        const forward = a.x < b.x
+        const x1 = forward ? a.x + W : a.x
+        const x2 = forward ? b.x : b.x + W
+        const bend = (forward ? 1 : -1) * Math.max(40, Math.abs(x2 - x1) / 2)
+        d = `M${x1},${ya} C${x1 + bend},${ya} ${x2 - bend},${yb} ${x2},${yb}`
+      }
+      const style = {
+        dependency: { stroke: 'var(--dep)', 'marker-end': 'url(#arrow)' },
+        'shared-concern': { stroke: 'var(--raw-idea)', 'stroke-dasharray': '5 4' },
+        conflict: { stroke: 'var(--conflict)', 'stroke-dasharray': '5 4', 'stroke-width': 2 },
+      }[c.type] ?? { stroke: 'var(--muted)' }
+      svg.append(
+        el('svg:path', { class: 'edge', 'data-from': c.from, 'data-to': c.to, d, fill: 'none', 'stroke-width': 1.5, ...style },
+          el('svg:title', {}, `${c.from} → ${c.to} (${c.type})${c.note ? `: ${c.note}` : ''}`)))
+    }
+
+    for (const n of board.nodes) {
+      const { x, y } = place.get(n.slug)
+      const group = el('svg:g', { class: `node${n.priority === 'blocking' ? ' blocking' : ''}`, tabindex: 0, 'data-slug': n.slug },
+        el('svg:title', {}, `${n.name || n.slug}\n${n.summary ?? ''}${n.lock ? `\n🔒 ${lockText(n.lock)}` : ''}`),
+        el('svg:rect', { class: 'box', x, y, width: W, height: H, rx: 6, stroke: color(n.maturity) }),
+        el('svg:rect', { x, y, width: 6, height: H, rx: 3, fill: color(n.maturity) }),
+        el('svg:text', { x: x + 14, y: y + (compact ? 19 : 21), 'font-weight': 600, 'font-size': compact ? 12 : 13 }, fit(`${n.lock ? '🔒 ' : ''}${n.slug}`, compact ? 22 : 26)),
+      )
+      if (!compact) group.append(el('svg:text', { x: x + 14, y: y + 39, 'font-size': 11.5, style: 'fill: var(--muted)' }, `${n.priority} · ${n.maturity}`))
+      if (n.priority === 'deferred') group.setAttribute('opacity', 0.55)
+      group.addEventListener('click', e => {
+        e.stopPropagation()
+        select(n.slug === selected ? null : n.slug)
+      })
+      group.addEventListener('keydown', e => (e.key === 'Enter' || e.key === ' ') && select(n.slug === selected ? null : n.slug))
+      svg.append(group)
+    }
+    svg.addEventListener('click', () => select(null))
+    byId('graph').replaceChildren(board.nodes.length ? svg : el('p', { class: 'muted' }, 'No nodes yet.'))
+
+    const body = el('tbody')
+    for (const n of [...board.nodes].sort(order)) {
+      const row = el('tr', { 'data-slug': n.slug },
+        el('td', { class: 'nowrap' }, el('strong', {}, n.slug), n.name && n.name !== n.slug ? el('div', { class: 'muted' }, n.name) : ''),
+        el('td', { class: 'nowrap' }, n.priority ?? ''),
+        el('td', { class: 'nowrap' }, el('span', { class: 'dot', style: `background: ${color(n.maturity)}` }), n.maturity ?? ''),
+        el('td', {}, String(n.rev)),
+        el('td', { class: 'nowrap', title: n.lock ? lockText(n.lock) : '' }, n.lock ? `🔒 ${n.lock.who}` : ''),
+        el('td', {}, n.summary ?? ''),
+      )
+      row.addEventListener('click', () => select(n.slug))
+      body.append(row)
+    }
+    byId('nodes').replaceChildren(el('thead', {}, el('tr', {}, ...['Node', 'Priority', 'Maturity', 'Rev', 'Lock', 'Summary'].map(h => el('th', {}, h)))), body)
+
+    byId('problems').replaceChildren(...(board.problems.length ? board.problems.map(p => el('li', {}, p)) : [el('li', { class: 'muted' }, 'None.')]))
+    byId('report').textContent = board.report
+    select(selected)
+  }
+
+  // A selected node, its connections and the nodes at their other end stay lit in the graph; the rest dims.
+  function select(slug) {
+    const n = board?.nodes.find(x => x.slug === slug)
+    selected = n?.slug ?? null
+    saved('selected', selected ?? '')
+    history.replaceState(null, '', selected ? `#${selected}` : location.pathname + location.search)
+    const near = new Set([selected])
+    for (const edge of document.querySelectorAll('.edge')) {
+      const lit = edge.dataset.from === selected || edge.dataset.to === selected
+      edge.classList.toggle('near', lit)
+      if (lit) near.add(edge.dataset.from).add(edge.dataset.to)
+    }
+    document.querySelector('#graph svg')?.classList.toggle('focus', Boolean(n))
+    for (const node of document.querySelectorAll('[data-slug]')) {
+      node.classList.toggle('selected', node.dataset.slug === selected)
+      node.classList.toggle('near', near.has(node.dataset.slug))
+    }
+    if (!n) {
+      byId('detail-title').textContent = 'Node file'
+      byId('detail').textContent = 'Click a node to read its file.'
+      byId('detail').classList.add('muted')
+      return
+    }
+    byId('detail-title').textContent = `${n.name || n.slug} — ${n.file ?? ''}`
+    byId('detail').textContent = n.text || '(node file missing)'
+    byId('detail').classList.remove('muted')
+  }
+
+  let last = ''
+  window.archBoard = state => {
+    byId('status').textContent = ''
+    const text = JSON.stringify(state)
+    if (text === last) return
+    last = text
+    board = state
+    render()
+  }
+
+  // a fresh <script> per poll: a page opened from disk may load scripts beside it, never read a JSON file
+  const poll = () => {
+    const script = el('script', { src: `board.js?t=${Date.now()}` })
+    script.onload = () => script.remove()
+    script.onerror = () => {
+      script.remove()
+      byId('status').textContent = 'board.js not found — any arch.mjs write, or /arch-board, writes it'
+    }
+    document.head.append(script)
+  }
+
+  document.addEventListener('keydown', e => e.key === 'Escape' && select(null))
+  const reportBox = byId('report-box')
+  reportBox.open = saved('report') === 'open'
+  reportBox.addEventListener('toggle', () => saved('report', reportBox.open ? 'open' : 'closed'))
+  const auto = byId('auto')
+  auto.checked = saved('auto') !== 'off'
+  auto.addEventListener('change', () => saved('auto', auto.checked ? 'on' : 'off'))
+  poll()
+  setInterval(() => auto.checked && poll(), 2000)
+</script>
+</body>
+</html>
