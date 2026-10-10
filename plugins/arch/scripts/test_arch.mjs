@@ -228,6 +228,12 @@ describe('arch.mjs', () => {
     const { out } = run('summary')
     has(out, '(full map, revision 3, 1 sessions since) — nodes changed since: stack\n')
     has(out, 'BRIEFS_OUTDATED 1\n  01-x.md — stack decide\n')
+    // a brief from before 4.0 records the board revision (the legacy session in index.json counts): fresh at 3,
+    // outdated at 2 by the session after
+    write(root, 'feature-briefs/01-x.md', '_Arch nodes covered: stack, sync_\n_Arch revision: 3_\n')
+    has(run('summary').out, 'BRIEFS_OUTDATED none')
+    write(root, 'feature-briefs/01-x.md', '_Arch nodes covered: stack, sync_\n_Arch revision: 2_\n')
+    has(run('summary').out, 'BRIEFS_OUTDATED 1\n  01-x.md — sync explore\n')
     write(root, 'sessions.jsonl', '{"date":"2026-10-10","skill":"new"}\n{broken\n')
     has(run('summary').out, 'INDEX_INVALID — .arch/sessions.jsonl line 2 is not valid JSON')
   })
@@ -241,6 +247,17 @@ describe('arch.mjs', () => {
     assert.equal(indexNow().nodes.length, 10)
     assert.equal(sessionsNow().length, 9)
     assert.ok(!fs.existsSync(path.join(root, '.arch/index.lock')))
+    // a lock whose run is gone is taken over; one whose run is alive is waited for, however old the file is
+    const lockFile = path.join(root, '.arch/index.lock')
+    fs.writeFileSync(lockFile, '999999999')
+    assert.equal(run('set', 'n0', 'summary', 'after a dead lock').code, 0)
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'])
+    fs.writeFileSync(lockFile, String(holder.pid))
+    fs.utimesSync(lockFile, 1, 1)
+    const started = Date.now()
+    // awaited, so this process reaps the holder when it exits; a blocking run would leave it a zombie, still "alive"
+    assert.equal(await go(['set', 'n0', 'summary', 'after a live lock']), 0)
+    assert.ok(Date.now() - started > 1000, 'did not wait for the live holder')
   })
 
   test('readiness structure blocks finalize', () => {

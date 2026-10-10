@@ -50,9 +50,11 @@ revisions instead, so later changes to its nodes outdate it again, except nodes 
 those changes outdate only the newest brief in the chain.
 A shared board lives on a branch of its own (.arch/ is its worktree, hidden from the code branches through
 .git/info/exclude), so its commits never reach a code branch or a pull request. Its locks are refs/arch/locks on the
-remote: one commit holding locks.json {branch, nodes: {KEY: {owner, host, since}}, released: {KEY: commit}}. You are user.email on this host. A lock changes by a push on top of the tip just fetched,
-which the remote refuses once anyone else moved it, so of two people claiming one node only one gets it. set, add-node
-and archive need your lock on the node; released[KEY] is the commit a release pushed, which claim requires in HEAD.
+remote: one commit holding locks.json {branch, nodes: {KEY: {owner, host, since}}, released: {KEY: commit}}. You are
+user.email on this host. A lock changes by a push on top of the tip just fetched, which the remote refuses once anyone
+else moved it, so of two people claiming one node only one gets it. set, add-node and archive need your lock on the
+node; released[KEY] is the commit a release pushed, which claim requires in HEAD. sync, claim and release first commit
+what .arch/ holds uncommitted as work in progress, then pull; nothing of yours is lost, and release pushes it.
 A brief names its OpenSpec changes on the first \`- Changes:\` line of its ## OpenSpec Handoff; summary derives each
 stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI:
 in the working tree, and on a shared board on every branch of the remote too (archived anywhere = done; otherwise the
@@ -141,19 +143,33 @@ let legacySessions = []
 const saveIndex = ({ sessions, last_updated, ...data }) =>
   write(INDEX, `${JSON.stringify(legacySessions.length ? { ...data, sessions: legacySessions } : data, null, 2)}\n`)
 
+// A process that still runs; EPERM is another user's process, alive
+const alive = pid => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return e.code === 'EPERM'
+  }
+}
+
 // One writer at a time: two runs that read index.json together would each save their copy and lose the other's change.
+// The lock holds its holder's pid: sync, claim and release keep it across git calls over the network, so how long a
+// lock has been there says nothing — only whether its run is still alive does.
 const lock = () => {
   for (let tries = 0; ; tries++) {
     try {
-      fs.closeSync(fs.openSync(LOCK, 'wx'))
+      fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' })
       process.on('exit', () => fs.rmSync(LOCK, { force: true }))
       return
     } catch (e) {
       if (e.code !== 'EEXIST') throw e
     }
-    // a write takes milliseconds, so an older lock was left by a killed run
-    if (Date.now() - (stat(LOCK)?.mtimeMs ?? Date.now()) > 10_000) fs.rmSync(LOCK, { force: true })
-    else if (tries > 600) fail(`${LOCK} is held by another arch.mjs run`)
+    const pid = Number(read(LOCK)) || 0
+    // no pid yet: just created, or left by a run of an older version — then its age tells
+    const stale = pid ? !alive(pid) : Date.now() - (stat(LOCK)?.mtimeMs ?? Date.now()) > 10_000
+    if (stale) fs.rmSync(LOCK, { force: true })
+    else if (tries > 4800) fail(`${LOCK} is held by another arch.mjs run (pid ${pid}) for two minutes — kill it or remove the file`)
     else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25)
   }
 }
@@ -635,9 +651,10 @@ const remoteChanges = () => {
   if (!shared()) return []
   const prefix = `refs/remotes/${remote()}/`
   const head = git(['symbolic-ref', '-q', `${prefix}HEAD`]).out
+  const board = `${prefix}${boardBranch()}`
   const refs = git(['for-each-ref', '--format=%(refname)', prefix])
     .out.split('\n')
-    .filter(r => r && r !== `${prefix}HEAD` && r !== `${prefix}${boardBranch()}`)
+    .filter(r => r && r !== `${prefix}HEAD` && r !== board)
     .sort((a, b) => (b === head) - (a === head))
   if (!refs.length) return []
   const trees = git(['cat-file', '--batch-check'], refs.map(r => `${r}:${CHANGES}\n`).join('')).out.split('\n')
@@ -872,13 +889,17 @@ const summary = data => {
     }
     const outdated = []
     for (const [name, meta] of active) {
-      // _Arch revision: stack=3, sync=1_ — a node it does not name is at 0
-      const at = new Map(
-        (meta['Arch revision'] ?? '').split(',').map(pair => {
-          const [slug, n] = pair.split('=').map(s => s.trim())
-          return [slug, Number(n) || 0]
-        }),
-      )
+      // _Arch revision: stack=3, sync=1_ — a node it does not name is at 0. Before 4.0 it was one number, the board
+      // revision: every node is at what the sessions up to there made it.
+      const text = (meta['Arch revision'] ?? '').trim()
+      const at = /^\d+$/.test(text)
+        ? revs(sessions.slice(0, Number(text)))
+        : new Map(
+            text.split(',').map(pair => {
+              const [slug, n] = pair.split('=').map(s => s.trim())
+              return [slug, Number(n) || 0]
+            }),
+          )
       const why = briefSlugs(meta)
         .filter(slug => !handedOn.get(name)?.has(slug))
         .flatMap(slug => {

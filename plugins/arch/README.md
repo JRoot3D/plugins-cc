@@ -223,7 +223,7 @@ Alice: /arch:explore auth            Bob: /arch:decide data-model
 ```
 
 - **Claim.** A skill claims a node as soon as it starts working on it, before the discussion, so nobody changes the node under you. A new node is claimed by its slug before its file is written. The status line shows `arch: holding auth`.
-- **Fresh content.** Claim pulls the board branch before it takes the node, so you start from what the others released. A session start and the start of each `/arch:` skill pull it too.
+- **Fresh content.** Claim pulls the board branch before it takes the node, so you start from what the others released. A session start and the start of each `/arch:` skill pull it too. Every pull first commits whatever `.arch/` holds uncommitted, as work in progress, so nothing of yours is lost; release pushes it. On a large repository the fetch of the code's branches behind `/arch:status` adds a moment to each skill start.
 - **Busy node.** When someone else holds the node, the skill says who and since when, and leaves the node alone: `auth is locked by alice@team.dev on alice-mbp since 2026-10-10 09:12 UTC`. Pick another node, or ask them to finish.
 - **Release.** At the end of the run the skill releases. It commits `.arch/` on the board branch, pulls (merge, never rebase), pushes the board branch and frees your locks. Your code branch is never touched.
 
@@ -264,6 +264,8 @@ Connections and the session log take no lock: two people connecting nodes at the
 | `/arch-unlock <node>` | Frees a lock its holder abandoned, such as a lost laptop or a crashed session. Works on anyone's lock, so check with them first: changes they made under it and never released may conflict later |
 
 Locks never expire on their own.
+
+Never run `git clean -x` (`-fdx`, `-ffdx`) in the project: `.arch/` is hidden from the code through `.git/info/exclude`, and `-x` deletes excluded files, board worktree included. What was released is on the remote; what was not is gone. Plain `git clean -fd` leaves it alone.
 
 ### When something goes wrong
 
