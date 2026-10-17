@@ -34,7 +34,7 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 **If the node maturity is `raw-idea`** — warn:
 > "This node hasn't been explored yet. Running `/arch:decide` on a raw idea often produces shallow decisions. Recommend `/arch:explore [node]` first. Proceed anyway? (yes/no)"
 
-**If the node maturity is `decided` or `ready`** — show the current `## Decision`, then ask what changed and route with this table, the same one `/arch:status` uses. Write nothing for a change outside the first row: say which command fits and stop.
+**If the node maturity is `decided` or `ready`** — show the current `## Decision`, then ask what changed and route with this table, the same one `/arch:status` uses. The priority form (`/arch:decide [node] priority [level]`) skips the table: go to **Priority Change**. Write nothing for a change outside the first row: say which command fits and stop.
 
 | What changed | Run |
 | --- | --- |
