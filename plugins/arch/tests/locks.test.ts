@@ -22,6 +22,21 @@ test("an edit of another person's node is refused with arch.mjs's reason", async
   expect(ran[0]?.slice(-2)).toEqual(['can-edit', '/p/.arch/ideas/a.md'])
 })
 
+test('a lock check that fails refuses the edit under .arch/', async ($, on) => {
+  on('process.run', () => {
+    throw new Error('node not found')
+  })
+  let edited = false
+  on('tool.call', () => {
+    edited = true
+    return { result: 'edited' as never }
+  })
+
+  const refused = await $.tool.call({ tool: 'Edit', file_path: '/p/.arch/ideas/a.md', old_string: 'x', new_string: 'y' })
+  expect(refused.deny ?? refused.text).toContain('could not check the lock on /p/.arch/ideas/a.md')
+  expect(edited).toBe(false)
+})
+
 test('files outside .arch/ pass without asking arch.mjs', async ($, on) => {
   let asked = false
   on('process.run', () => {

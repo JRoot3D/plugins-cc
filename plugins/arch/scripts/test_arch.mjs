@@ -439,6 +439,13 @@ describe('arch.mjs', () => {
     }
   })
 
+  test('an .arch/ that is a repository of its own is no board worktree', () => {
+    assert.equal(spawnSync('git', ['init', '-q', '--separate-git-dir', path.join(root, 'arch-git'), path.join(root, '.arch')]).status, 0)
+    assert.ok(fs.statSync(path.join(root, '.arch/.git')).isFile())
+    has(run('set', 'stack', 'summary', 'kept as before').out, 'OK stack summary')
+    assert.equal(run('can-edit', path.join(root, '.arch/ideas/stack.md')).out, 'OK\n')
+  })
+
   test('a missing or broken index never fails summary', () => {
     write(root, 'index.json', '{broken')
     let r = run('summary')
@@ -629,6 +636,188 @@ describe('shared board', () => {
     assert.equal(board(w, 'symbolic-ref', '--short', 'HEAD'), 'design')
     has(arch(w, 'share', 'design').out, 'OK this clone works on the shared board')
   })
+
+  test('commands work from inside .arch/ and from a code folder', () => {
+    const ideas = path.join(alice, '.arch', 'ideas')
+    const src = path.join(alice, 'src')
+    fs.mkdirSync(src)
+    for (const cwd of [ideas, src]) has(ok(cwd, 'summary'), 'ARCH_SESSION project=P')
+    ok(ideas, 'claim', 'a')
+    ok(ideas, 'set', 'a', 'summary', 'from inside')
+    assert.equal(arch(src, 'can-edit', '../.arch/ideas/a.md').out, 'OK\n')
+    has(arch(src, 'can-edit', '../.arch/ideas/b.md').out, 'b is not claimed')
+    has(ok(ideas, 'release'), 'freed a')
+    has(sh(alice, 'show', 'origin/arch:index.json'), 'from inside')
+  })
+
+  test('only board files are committed', () => {
+    for (const junk of ['Thumbs.db', 'scratch.py']) fs.writeFileSync(path.join(alice, '.arch', junk), 'x')
+    has(ok(alice, 'claim', 'a'), 'not committed (not board files): Thumbs.db, scratch.py')
+    ok(alice, 'set', 'a', 'summary', 'changed')
+    has(ok(alice, 'release'), 'not committed (not board files): Thumbs.db, scratch.py')
+    lacks(sh(alice, 'ls-tree', '-r', '--name-only', 'origin/arch'), '.db')
+    lacks(sh(alice, 'ls-tree', '-r', '--name-only', 'origin/arch'), '.py')
+    has(board(alice, 'status', '--porcelain'), '?? scratch.py')
+  })
+
+  test('sync commits nothing, and leaves a pull that would overwrite a change to the next claim', () => {
+    ok(alice, 'claim', 'a')
+    fs.appendFileSync(idea(alice, 'a'), 'work in progress\n')
+    const head = board(alice, 'rev-parse', 'HEAD')
+    lacks(ok(alice, 'sync'), 'BOARD_PULL')
+    assert.equal(board(alice, 'rev-parse', 'HEAD'), head)
+    has(board(alice, 'status', '--porcelain'), 'M ideas/a.md')
+    // bob releases a change to index.json while alice has one of her own there, uncommitted
+    ok(bob, 'claim', 'b')
+    ok(bob, 'set', 'b', 'summary', 'from bob')
+    ok(bob, 'release')
+    ok(alice, 'connect', 'a', 'b', 'shared-concern', 'from alice')
+    has(ok(alice, 'sync'), 'BOARD_PULL_SKIPPED — .arch/ has uncommitted changes the pull would overwrite')
+    assert.equal(board(alice, 'rev-parse', 'HEAD'), head)
+    has(fs.readFileSync(path.join(alice, '.arch/index.json'), 'utf8'), 'from alice')
+    ok(alice, 'claim', 'a') // commits her work, then merges bob's through the driver
+    const index = fs.readFileSync(path.join(alice, '.arch/index.json'), 'utf8')
+    has(index, 'from alice')
+    has(index, 'from bob')
+    has(board(alice, 'log', '-1', '--format=%s', 'HEAD^1'), 'arch: work in progress before claim a — alice@x')
+  })
+
+  test('a release title names three keys, the body all of them', () => {
+    ok(alice, 'claim', 'a', 'b', 'c', 'd', '#context')
+    ok(alice, 'set', 'a', 'summary', 'changed')
+    ok(alice, 'release')
+    assert.equal(sh(alice, 'log', '-1', '--format=%s', 'origin/arch'), 'arch: a, b, c +2 more — alice@x')
+    assert.equal(sh(alice, 'log', '-1', '--format=%b', 'origin/arch'), 'a, b, c, d, #context')
+  })
+
+  test('release refuses changes to a key you do not hold, whatever made them', () => {
+    ok(alice, 'claim', 'a')
+    const before = sh(alice, 'rev-parse', 'origin/arch')
+    fs.appendFileSync(idea(alice, 'b'), 'a shell edit\n')
+    const r = arch(alice, 'release')
+    assert.equal(r.code, 1)
+    has(r.out, 'release would push changes to b, which you do not hold')
+    has(r.out, 'your locks are kept')
+    assert.equal(sh(alice, 'rev-parse', 'origin/arch'), before)
+    has(ok(alice, 'summary'), '  a — yours since ')
+    ok(alice, 'claim', 'b')
+    has(ok(alice, 'release'), 'freed a, b')
+  })
+
+  test('release refuses a node file moved away from a key you do not hold', () => {
+    ok(alice, 'claim', 'c')
+    fs.renameSync(idea(alice, 'b'), idea(alice, 'c'))
+    has(arch(alice, 'release').out, 'release would push changes to b, which you do not hold')
+  })
+
+  test('release checks the locks the remote holds now', () => {
+    ok(alice, 'claim', 'a')
+    fs.appendFileSync(idea(alice, 'a'), 'alice was here\n')
+    ok(bob, 'unlock', 'a', '--force')
+    ok(bob, 'claim', 'a')
+    const r = arch(alice, 'release') // her local lock ref still says she holds a
+    assert.equal(r.code, 1)
+    has(r.out, 'release would push changes to a, which you do not hold')
+  })
+
+  test('release compares with what the pull fetched, whatever the fetch refspec', () => {
+    const code = sh(bob, 'branch', '--show-current')
+    sh(bob, 'config', 'remote.origin.fetch', `+refs/heads/${code}:refs/remotes/origin/${code}`)
+    ok(alice, 'claim', 'b')
+    fs.appendFileSync(idea(alice, 'b'), 'by alice\n')
+    ok(alice, 'release')
+    ok(bob, 'claim', 'a')
+    fs.appendFileSync(idea(bob, 'a'), 'by bob\n')
+    has(ok(bob, 'release'), 'freed a') // b came with the pull, not from bob
+  })
+
+  test('a linked code worktree neither joins the board nor fetches', () => {
+    const wt = path.join(base, 'alice-wt')
+    sh(alice, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    const trace = path.join(base, 'trace')
+    const r = spawnSync(process.execPath, [SCRIPT, 'sync'], { cwd: wt, encoding: 'utf8', env: { ...process.env, GIT_TRACE: trace } })
+    has(r.stdout, 'BOARD_NOT_HERE — this is a linked worktree')
+    lacks(fs.readFileSync(trace, 'utf8'), 'fetch')
+    assert.ok(!fs.existsSync(path.join(wt, '.arch')))
+  })
+
+  test('a second archive of a node counts for its key', () => {
+    ok(alice, 'claim', 'a')
+    fs.writeFileSync(path.join(alice, '.arch/ideas/a.archived.md'), node('a', 'core', 'raw-idea'))
+    has(ok(alice, 'archive', 'a'), 'ideas/a-2.archived.md')
+    has(ok(alice, 'release'), 'freed a')
+  })
+
+  test('a board worktree without the local lock ref fetches it, and never writes without it', () => {
+    sh(bob, 'update-ref', '-d', 'refs/arch/locks')
+    ok(alice, 'claim', 'a')
+    has(arch(bob, 'set', 'a', 'summary', 'x').out, 'ERROR: a is locked by alice@x')
+    sh(bob, 'update-ref', '-d', 'refs/arch/locks')
+    sh(bob, 'remote', 'set-url', 'origin', path.join(base, 'gone.git'))
+    has(arch(bob, 'set', 'a', 'summary', 'x').out, 'refs/arch/locks could not be fetched from origin')
+    assert.equal(arch(bob, 'can-edit', idea(bob, 'a')).code, 1)
+    for (const cmd of [['claim', 'a'], ['release']]) has(arch(bob, ...cmd).out, 'refs/arch/locks could not be fetched')
+    assert.equal(arch(bob, 'summary').code, 0)
+  })
+
+  test('sync warns when the board branch lost its merge drivers; release commits them again', () => {
+    board(alice, 'rm', '-q', '.gitattributes')
+    board(alice, 'commit', '-q', '-m', 'drop the attributes')
+    board(alice, 'push', '-q', 'origin', 'HEAD:arch')
+    has(ok(bob, 'sync'), 'BOARD_ATTRIBUTES_MISSING — the board branch has no merge drivers in .gitattributes')
+    ok(bob, 'claim', 'a')
+    ok(bob, 'release')
+    const attributes = sh(bob, 'show', 'origin/arch:.gitattributes')
+    has(attributes, 'index.json merge=arch-index')
+    has(attributes, 'sessions.jsonl merge=union')
+    lacks(ok(bob, 'sync'), 'BOARD_ATTRIBUTES_MISSING')
+  })
+})
+
+// a clone made before the board was shared: it joins once it has fetched the board branch, at its first session start
+test('a fresh clone joins the board at sync, and a repository without one makes no network call', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-join-'))
+  const sh = (cwd, ...args) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
+    assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`)
+    return r.stdout.trim()
+  }
+  const arch = (cwd, args, env = {}) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...env } })
+  sh(base, 'init', '-q', '--bare', 'remote.git')
+  const clone = name => {
+    sh(base, 'clone', '-q', 'remote.git', name)
+    const dir = path.join(base, name)
+    for (const [key, value] of [['user.email', `${name}@x`], ['user.name', name], ['commit.gpgsign', 'false']]) sh(dir, 'config', key, value)
+    return dir
+  }
+  const w = clone('w')
+  fs.writeFileSync(path.join(w, 'code.txt'), 'code')
+  sh(w, 'add', 'code.txt')
+  sh(w, 'commit', '-q', '-m', 'code')
+  sh(w, 'push', '-q', '-u', 'origin', 'HEAD')
+  const early = clone('early')
+  const trace = path.join(base, 'trace')
+  assert.equal(arch(early, ['sync'], { GIT_TRACE: trace }).stdout, 'LOCKS not shared\n')
+  lacks(fs.readFileSync(trace, 'utf8'), 'fetch')
+  // a machine-level ignore rule that names .gitattributes does not keep the merge drivers off the board
+  const ignore = path.join(base, 'ignore')
+  fs.writeFileSync(ignore, '.gitattributes\n')
+  sh(w, 'config', 'core.excludesFile', ignore)
+  assert.equal(arch(w, ['init', 'P']).status, 0)
+  assert.equal(arch(w, ['share']).status, 0)
+  has(sh(w, 'show', 'origin/arch:.gitattributes'), 'index.json merge=arch-index')
+  assert.equal(arch(early, ['sync']).stdout, 'LOCKS not shared\n') // has not fetched the board branch yet
+  sh(early, 'fetch', '-q')
+  has(arch(early, ['sync']).stdout, 'LOCKS shared via origin')
+  assert.equal(sh(path.join(early, '.arch'), 'symbolic-ref', '--short', 'HEAD'), 'arch')
+})
+
+test('init with no .arch/ anywhere creates it where it runs', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-init-'))
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: dir }).status, 0)
+  fs.mkdirSync(path.join(dir, 'sub'))
+  assert.equal(spawnSync(process.execPath, [SCRIPT, 'init', 'P'], { cwd: path.join(dir, 'sub') }).status, 0)
+  assert.ok(fs.existsSync(path.join(dir, 'sub/.arch/index.json')))
 })
 
 test('index.json merge driver: different fields merge, the same field changed twice conflicts', () => {
@@ -693,4 +882,12 @@ test('shared skill lines are present and identical', () => {
     const variants = new Set(found.flatMap(([, hits]) => hits))
     assert.equal(variants.size, 1, `${JSON.stringify(prefix)} differs between skills:\n${[...variants].join('\n')}`)
   }
+})
+
+test('the changelog has the plugin version, with what it changes for an existing board', () => {
+  const root = path.join(path.dirname(SCRIPT), '..')
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin/plugin.json'), 'utf8'))
+  const entry = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').split(/^## /m).find(part => part.startsWith(`${version} — `))
+  assert.ok(entry, `CHANGELOG.md has no "## ${version} — DATE"`)
+  has(entry, '### What changes for an existing board')
 })

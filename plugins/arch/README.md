@@ -203,7 +203,9 @@ At the start of the architecture work, one person runs `/arch-share` (`/arch:new
 3. It creates `refs/arch/locks` on the remote: a ref of its own holding `locks.json`.
 4. It hides `.arch/` from the code checkout through `.git/info/exclude`, so `git status` on the code stays clean. If a code branch already tracked `.arch/`, the removal is staged there. Commit it the way the project takes changes; a pull request is fine, since the board itself never needs one again.
 
-Everyone else pulls the project, installs the plugin and starts Claude Code there. At session start the plugin checks out the board branch at `.arch/` by itself. If you already have a `.arch/` folder, run `/arch-share`: it sets the board branch up and keeps the old folder as `.arch.local-…`.
+Everyone else pulls the project, installs the plugin and starts Claude Code there. At session start the plugin checks out the board branch at `.arch/` by itself, once the clone has fetched it (a clone made before `/arch-share` gets it with its next `git fetch` or `git pull`). A repository with no board makes no network call for this, and neither does a code checkout made with `git worktree add`: the board stays in the main worktree. If you already have a `.arch/` folder, run `/arch-share`: it sets the board branch up and keeps the old folder as `.arch.local-…`.
+
+Board commits run this clone's git hooks, like any commit. Never skip them with `--no-verify`: a secret scan, for one, must see board commits too. If the code's hooks reject board commits (a commit-message rule for the code, say), give the board worktree hooks of its own: `git config extensions.worktreeConfig true`, then `git -C .arch config --worktree core.hooksPath <dir>`. arch never runs a hook stored on the board branch: that branch gets no review, so such a hook would run unreviewed code.
 
 The board branch is pushed to directly, so it must not require pull requests. If the repository protects every branch, exempt the board branch. `main` cannot serve as the board branch: your code checkout usually has it checked out, git checks a branch out in one place only, and `main` often takes changes only through pull requests.
 
@@ -223,9 +225,9 @@ Alice: /arch:explore auth            Bob: /arch:decide data-model
 ```
 
 - **Claim.** A skill claims a node as soon as it starts working on it, before the discussion, so nobody changes the node under you. A new node is claimed by its slug before its file is written. The status line shows `arch: holding auth`.
-- **Fresh content.** Claim pulls the board branch before it takes the node, so you start from what the others released. A session start and the start of each `/arch:` skill pull it too. Every pull first commits whatever `.arch/` holds uncommitted, as work in progress, so nothing of yours is lost; release pushes it. On a large repository the fetch of the code's branches behind `/arch:status` adds a moment to each skill start.
+- **Fresh content.** Claim pulls the board branch before it takes the node, so you start from what the others released. A session start and the start of each `/arch:` skill pull it too, committing nothing: when the pull would overwrite a change you have not released, it waits (`BOARD_PULL_SKIPPED`), and your next claim or release commits and merges it. Claim and release commit only board files (`index.json`, `sessions.jsonl`, `.gitattributes`, `.gitignore`, `todo-list.md`, `project-context.md`, `ideas/*.md`, `feature-briefs/*.md`); anything else in `.arch/`, such as `.DS_Store` or a scratch script, stays out and is named in their output. On a large repository the fetch of the code's branches behind `/arch:status` adds a moment to each skill start.
 - **Busy node.** When someone else holds the node, the skill says who and since when, and leaves the node alone: `auth is locked by alice@team.dev on alice-mbp since 2026-10-10 09:12 UTC`. Pick another node, or ask them to finish.
-- **Release.** At the end of the run the skill releases. It commits `.arch/` on the board branch, pulls (merge, never rebase), pushes the board branch and frees your locks. Your code branch is never touched.
+- **Release.** At the end of the run the skill releases. It commits the board files on the board branch, pulls (merge, never rebase), pushes the board branch and frees your locks. Your code branch is never touched. The commit title names the first three keys you held; the body lists all of them.
 
 ### Implementing the features
 
@@ -272,7 +274,10 @@ Never run `git clean -x` (`-fdx`, `-ffdx`) in the project: `.arch/` is hidden fr
 | You see | Do |
 |---------|----|
 | `auth is locked by …` | Work on another node, or ask them to release |
-| `this project's board is shared on the branch arch, and .arch/ here is not its worktree: run /arch-share` | `/arch-share` |
+| `this project's board is shared on the branch arch, and .arch/ in <folder> is not its worktree: run /arch-share` | `/arch-share` in that folder. arch finds the project root from `.arch/` and from code folders, so this means the clone was never set up |
+| `release would push changes to b, which you do not hold` | A change to `b` reached `.arch/` without its lock. Claim `b` and release again, or undo the change (`git -C .arch log origin/arch..HEAD` shows the commits) |
+| `.arch/ is a board worktree, but refs/arch/locks could not be fetched` | Check the network and the remote, then try again |
+| `BOARD_ATTRIBUTES_MISSING` | The board branch lost its merge drivers: `/arch-release` commits them again. If the line names an ignore rule, that rule kept `.gitattributes` out |
 | `a branch arch already exists` | Name another branch: `/arch-share <branch>` |
 | `pulling the board branch arch failed and was undone` | `git -C .arch pull`, resolve it as any merge (usually `index.json`, below), then run the skill again or `/arch-release` |
 | `git push to arch failed; your locks are kept` | Check your access and that the board branch takes direct pushes, then `/arch-release` |
@@ -289,8 +294,10 @@ Never run `git clean -x` (`-fdx`, `-ffdx`) in the project: `.arch/` is hidden fr
 ### Enforcement and limits
 
 - `arch.mjs set`, `add-node` and `archive` refuse a node you do not hold, on every surface.
-- In the CLI the plugin's hooks also refuse an Edit or Write of a file you do not hold. They fetch the locks and pull the board branch at session start and when an `/arch:` skill starts, and show the nodes you hold in the status line. The desktop app gets the `arch.mjs` checks only, and claim and release still pull.
-- An edit made through a shell command (`sed`, a heredoc) bypasses the hook.
+- Release refuses to push a change to a node file, a brief, `todo-list.md` or `project-context.md` whose key you do not hold, whatever made the change.
+- In the CLI the plugin's hooks also refuse an Edit or Write of a file you do not hold, and refuse one under `.arch/` when the check itself fails. They fetch the locks and pull the board branch at session start and when an `/arch:` skill starts, and show the nodes you hold in the status line. The desktop app gets the `arch.mjs` checks only, and claim and release still pull.
+- An edit made through a shell command (`sed`, a heredoc) bypasses the hook; release then refuses it unless you hold the key.
+- A clone with a board worktree but no local `refs/arch/locks` fetches the locks before a write, and refuses the write when it cannot.
 - You are `user.email` on this machine: the same address on two machines counts as two holders.
 - Without a remote, or before `/arch-share`, none of this runs: `.arch/` is an ordinary folder, as it always was.
 - macOS, Linux and Windows work alike: the script calls `git` by argument list, and the merge driver is written with forward slashes for Git's own shell.
@@ -381,7 +388,7 @@ Behaviour evals (`evals/`, [plugin evals](https://code.claude.com/docs/en/plugin
 claude plugin eval . --scaffold --ablation none --allow-tools Write Edit "Bash(node *)"
 ```
 
-Every run is a real model call (about $3 for the suite at 3 runs per case). `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.mjs` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills, otherwise installed users keep the cached copy.
+Every run is a real model call (about $3 for the suite at 3 runs per case). `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.mjs` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills or scripts, otherwise installed users keep the cached copy, and add the version to [CHANGELOG.md](CHANGELOG.md) with its "What changes for an existing board" section (the tests check that it is there).
 
 ## Credits
 
