@@ -9,9 +9,10 @@ Newest first. Each version says what it changes, then what that means for a boar
 - A fresh clone of a project with a shared board gets `.arch/` at its first session start, as soon as it has fetched the board branch. A repository with no board makes no network call for it.
 - Claim and release commit only board files: `index.json`, `sessions.jsonl`, `.gitattributes`, `.gitignore`, `todo-list.md`, `project-context.md`, `ideas/*.md`, `feature-briefs/*.md`. Any other file in `.arch/` stays out and is named in their output. `.gitattributes` and `.gitignore` are committed even where an ignore rule outside arch names them.
 - Sync (session start, the start of each `/arch:` skill) commits nothing. When its pull would overwrite a change not yet released, it prints `BOARD_PULL_SKIPPED`, and the next claim or release commits and merges it.
-- Release refuses to push a change to a node file, a brief, `todo-list.md` or `project-context.md` whose key you do not hold, whatever made the change (a shell edit included). Your locks are kept; claim the key and release again.
+- Release refuses to push a change to a node file, a brief, `todo-list.md` or `project-context.md` whose key you do not hold, whatever made the change (a shell edit or a move included). It reads the locks the remote holds at that moment, so a lock force-freed and taken by someone else no longer counts as yours. Your locks are kept; claim the key and release again.
 - The Edit and Write hooks refuse a file under `.arch/` when the lock check itself fails, instead of letting the edit run.
-- A board worktree without a local `refs/arch/locks` fetches it before a write and refuses the write when it cannot.
+- A board worktree without a local `refs/arch/locks` fetches it before a write and refuses the write (claim and release included) when it cannot. An `.arch/` that is a submodule or a repository of its own is not a board worktree and works as before.
+- In a code checkout made with `git worktree add`, sync prints `BOARD_NOT_HERE` and fetches nothing: the board stays in the main worktree.
 - Release commit titles name the first three keys, then `+N more`; the body lists all of them. The work-in-progress commit of a claim names the keys it claims.
 - Sync prints `BOARD_ATTRIBUTES_MISSING` while the board branch has no merge drivers in its `.gitattributes`; the next release commits them.
 - Every command but `merge-index` works from inside `.arch/` and from a code folder, as from the project root.
@@ -20,7 +21,7 @@ Newest first. Each version says what it changes, then what that means for a boar
 
 - Files rewritten: none. No board file changes format, and nothing is migrated. `index.json`, `sessions.jsonl`, the briefs and `refs/arch/locks` read and write as in 4.0.0.
 - New optional fields: none.
-- Output: `summary` and `check` print the same lines. Sync prints `BOARD_PULL_SKIPPED` or `BOARD_ATTRIBUTES_MISSING` only when they apply. Claim and release add `— not committed (not board files): …` only when such files exist. `INDEX_INVALID — … not its worktree` names the folder.
+- Output: `summary` and `check` print the same lines. Sync prints `BOARD_PULL_SKIPPED` or `BOARD_ATTRIBUTES_MISSING` only when they apply, and `BOARD_NOT_HERE` in a linked code worktree. Claim and release add `— not committed (not board files): …` only when such files exist. `INDEX_INVALID — … not its worktree` names the folder.
 - Manual steps: none. Before the first release, check that `git -C .arch status --short` and `git -C .arch log origin/arch..HEAD` (your board branch on your remote) show only work under keys you hold: a change to a key you do not hold now stops the release.
 - Mixed versions: a 4.0.0 clone and a 4.1.0 clone share a board safely. The lock ref format is the same. A 4.0.0 clone still commits every file in `.arch/` and does not check the keys of its own releases; its pushes reach the board branch first, so they never count against a 4.1.0 release. Each clone's merge driver points to the script of the version that last ran sync, claim, release or share.
 
