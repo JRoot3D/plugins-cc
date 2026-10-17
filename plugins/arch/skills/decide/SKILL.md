@@ -63,7 +63,7 @@ Generated from `.arch/` by the plugin's state script when this skill started:
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on, LOCKS and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write: fix the bookkeeping it reports in the nodes this run changed (a copy that differs, a missing `## Connections` line, an unknown slug) and run it again until only problems that need a decision remain — an unresolved conflict, a `ready` node that depends on a less mature one, a dependency cycle; never change maturity, priority or connections to clear those, name them to the user. Name bookkeeping problems in other nodes without fixing them: another session may be midway through a merge, a split or new nodes. Never edit `index.json` or `sessions.jsonl` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `rename-node OLD NEW` (a live node's new slug: file, connections, revision and brief coverage move with it), `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write: fix the bookkeeping it reports in the nodes this run changed (a copy that differs, a missing `## Connections` line, an unknown slug) and run it again until only problems that need a decision remain — an unresolved conflict, a `ready` node that depends on a less mature one, a dependency cycle; never change maturity, priority or connections to clear those, name them to the user. Name bookkeeping problems in other nodes without fixing them: another session may be midway through a merge, a split or new nodes. Never edit `index.json` or `sessions.jsonl` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 **Shared board** (Current State has a `LOCKS shared via` block): other people change this board from their own clones, a node each. `.arch/` is a worktree of the board's own branch (named in that block): never commit it, put it on another branch or open a pull request for it yourself, whatever this project's rules say for code — claim and release pull and push it. As soon as you start working on a node, and before you write any of its files, `arch.mjs claim SLUG...` every node you will change — a new node's slug before you write its file, `#briefs` for feature briefs and the todo list, `#context` for `project-context.md`. Claim first pulls the board branch, so you work on what the others released. If claim says another person holds one, tell the user who and since when and leave that node alone; if a pull fails, show the user its error. `set`, `add-node` and `archive` refuse a node you do not hold. When the run is done — after your last `check`, or when it wrote nothing — `arch.mjs release`: it commits `.arch/` on the board branch, pulls, pushes and frees your locks; if it fails, show the user its error and that `/arch-release` retries it once the cause is fixed — your locks stay until it succeeds. Run `arch.mjs unlock KEY --force` only when the user says another person's lock is abandoned.
 
@@ -115,6 +115,7 @@ Wait for the user's answer. Do not infer or assume.
 Update the node file first — `arch.mjs set … decided` refuses a file without `## Decision`:
 - Replace or expand `## Description` with the decided approach
 - Add the `## Decision` section from the template below (on a revisit, see Option 2), with Assumptions and Confirmation scaled to the reversal cost
+- When the project keeps decision records (`project-context.md` names their folder, or the user does), write `_Record: [path]_` under `_Decided:_`, the path relative to the repository root. Add ` @ [today]` when this run needs a new or changed record (a new decision, a revisit); leave it out when the decision only points to a record that exists. Never write "(PR pending)" notes: `RECORDS_PENDING` in Current State tracks the record
 - If a `conflict` connection involves this node, the decision must resolve it: say how under Implications, remove it with `arch.mjs disconnect FROM TO conflict` and drop its `## Connections` line — `check` reports an open conflict on a decided node
 - On a revisit, look for text the new decision makes stale: search this node's `## Description`, `## Notes`, `## Triage` and `## Connections`, and the `## Connections` lines of connected nodes, for the terms of the previous choice (take them from `## Previous Decision` and the new Alternatives table). Show each hit as file:line and ask the user. For an approved Notes or Triage section, put one banner line under its heading: `> These notes come from before the revisit of [date]. Their [terms] details do not apply. The current decision is in "Decision".` Rewrite an approved Connections line, or a line that says a step is pending when it is done, to the current state. Never edit `## History` or `## Previous Decision`. A line in another node needs that node's claim; without the claim, list the line under Step 7
 - Add session entry to `## History` — include a one-line summary of *what was decided and why*. Not just "decided via /arch:decide" but the substance. Example:
@@ -127,6 +128,8 @@ Check the node against the readiness criteria in "Maturity progression rules" be
 
 - **All met** → ask: "[node] meets the criteria for `ready`. Mark it ready?" On yes, run `arch.mjs set [slug] maturity ready`, add a History line, and `arch.mjs log decide "[node] ready" --node [slug]` unless Step 5 already logged this run.
 - **Some missing** → list exactly what is missing (e.g. the open question text) and leave the node at `decided`. Resolving them later and re-running `/arch:decide [node]` brings it to `ready`.
+- When the node has a `_Record:` line, run `arch.mjs summary` again and check criterion 6 against its `RECORDS_PENDING`: Current State was generated before this run wrote the line.
+- **Only the record is missing** (criterion 6) → leave the node at `decided` and tell the user: "merge [path], then run `/arch:decide [node]` and choose option 1". `arch.mjs summary` reads the default branch, so run it again to see the record land.
 
 ### Step 7 — Check for Cascades
 Check `## Connections` in the node file and `connections` in `index.json`.
@@ -141,6 +144,7 @@ If a connected node is `decided` or `ready` and this decision contradicts it, sa
 ### Step 8 — Notify
 > "Decision locked → [node name] is now `[decided / ready]`.
 > [N] blocking nodes still not `ready`: [list if any].
+> [Each node waiting for its record: merge [path], then /arch:decide [node], option 1.]
 > When none remain, type /arch:finalize to write the briefs."
 
 ---
@@ -160,6 +164,7 @@ Add this section to the node file after `## Description`:
 ```markdown
 ## Decision
 _Decided: [date]_
+[only when the project keeps decision records: _Record: [path] @ [date]_ — leave out ` @ [date]` when the record exists and this decision does not change it]
 
 ### What Was Decided
 [Clear statement of the chosen approach]
@@ -203,17 +208,19 @@ A node reaches `ready` when:
 3. `## Decision → Implications` states the effect on each connected node, or says there is none
 4. Every node it depends on (`dependency` connections that point to it) is `ready`, and no `conflict` connection involves it
 5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early or its Implications name a `Boundary:` that keeps the choice replaceable
+6. When the node has a `_Record:` line, `RECORDS_PENDING` does not list it
 
 ---
 
 ## Rules
 - Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
-- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set` and `archive` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
+- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set`, `archive` and `rename-node` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
 - Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Never decide on behalf of the user — always wait for explicit confirmation in Step 4
 - If the user says "just pick the best one" — provide a clear recommendation with rationale, but still ask for confirmation
 - Do not advance to `ready` while any readiness criterion is unmet
+- To rename a node, use `arch.mjs rename-node OLD NEW`. Never use add-node + archive + rename for it: that restarts the node's revision and leaves the briefs that name it outdated
 - A node has at most one `## Decision` section — revisiting moves the old one to `## Previous Decision (superseded [date])`
 - If a blocking node is being decided, check all nodes that listed it as a connection and note the unblocking
 - `/arch:finalize` and `/arch:new` start only when the user types them. Tell the user to type the command. Do not offer to run it and do not call it with the Skill tool. Never write feature briefs, todo-list rows or brief header lines outside a finalize run

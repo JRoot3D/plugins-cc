@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: decide-waits-for-record
+context:
+  scaffold_script: scaffold.sh

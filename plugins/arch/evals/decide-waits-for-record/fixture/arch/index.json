@@ -1,0 +1,15 @@
+{
+  "project": "Clinic",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "store",
+      "name": "Store",
+      "priority": "blocking",
+      "maturity": "explored",
+      "file": "ideas/store.md",
+      "summary": "Relational store for appointments."
+    }
+  ],
+  "connections": []
+}

@@ -1,0 +1,23 @@
+{
+  "project": "Feeds",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "ingest",
+      "name": "Ingest",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/ingest.md",
+      "summary": "Fetch and parse feeds (T-2)."
+    },
+    {
+      "slug": "storage",
+      "name": "Storage",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/storage.md",
+      "summary": "Feeds and items in PostgreSQL (T-3)."
+    }
+  ],
+  "connections": []
+}

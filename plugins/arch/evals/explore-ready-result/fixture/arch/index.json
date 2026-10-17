@@ -1,0 +1,15 @@
+{
+  "project": "Clinic",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "core",
+      "name": "Shared Core",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/core.md",
+      "summary": "Slot rules in a shared library."
+    }
+  ],
+  "connections": []
+}

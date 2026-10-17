@@ -1,0 +1,15 @@
+{
+  "project": "Feeds",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "reports",
+      "name": "Reports",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/reports.md",
+      "summary": "Reading reports as CSV."
+    }
+  ],
+  "connections": []
+}
