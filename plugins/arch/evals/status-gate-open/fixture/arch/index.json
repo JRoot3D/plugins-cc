@@ -8,7 +8,7 @@
       "priority": "blocking",
       "maturity": "ready",
       "file": "ideas/tooling.md",
-      "summary": "pnpm monorepo, one CI workflow."
+      "summary": "pnpm workspace, one CI workflow."
     },
     {
       "slug": "db",

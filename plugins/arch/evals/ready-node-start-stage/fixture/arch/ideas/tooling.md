@@ -9,7 +9,7 @@ Repository layout and CI.
 _Decided: 2026-10-01_
 
 ### What Was Decided
-A pnpm monorepo with one CI workflow.
+A pnpm workspace with one CI workflow.
 
 ### Alternatives Considered
 | Option | Why not chosen |
@@ -44,4 +44,4 @@ ready
 
 ## History
 - 2026-09-20 /arch:new — Repo layout.
-- 2026-10-01 /arch:decide — chose a pnpm monorepo
+- 2026-10-01 /arch:decide — chose a pnpm workspace

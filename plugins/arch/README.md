@@ -389,7 +389,7 @@ Behaviour evals (`evals/`, [plugin evals](https://code.claude.com/docs/en/plugin
 claude plugin eval . --scaffold --ablation none --allow-tools Write Edit "Bash(node *)"
 ```
 
-Every run is a real model call (about $3 for the suite at 3 runs per case). `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.mjs` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills or scripts, otherwise installed users keep the cached copy, and add the version to [CHANGELOG.md](CHANGELOG.md) with its "What changes for an existing board" section (the tests check that it is there).
+Every run is a real model call (about $8 for the suite at 3 runs per case). Graders match a tool call's input as JSON, where the quotes around the script path read `\"`: write `arch\.mjs\\?"?\s+…`. `--ablation none` skips the no-plugin arm, which is meaningless for slash-command prompts. The fixtures under `evals/*/fixture/arch/` were generated with `arch.mjs` and pass `check`. The plugin manifest is at `.claude-plugin/plugin.json` — bump its `version` with every change to the skills or scripts, otherwise installed users keep the cached copy, and add the version to [CHANGELOG.md](CHANGELOG.md) with its "What changes for an existing board" section (the tests check that it is there).
 
 ## Credits
 
