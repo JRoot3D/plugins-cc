@@ -1,0 +1,15 @@
+{
+  "project": "Pantry",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "stack",
+      "name": "Stack",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/stack.md",
+      "summary": "TypeScript monolith on Node."
+    }
+  ],
+  "connections": []
+}

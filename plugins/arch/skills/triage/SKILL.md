@@ -201,8 +201,8 @@ Use `project-context.md` and the user's language in the node descriptions to gau
 
 ## Rules
 - Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
-- Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
+- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set` and `archive` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Do not change node maturity — triage enriches, it does not advance
 - Do not make decisions or recommend specific approaches — present the landscape

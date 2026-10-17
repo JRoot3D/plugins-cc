@@ -2,6 +2,7 @@
 name: finalize
 description: Ends an architector session — turns ready idea nodes from .arch/ into numbered feature briefs, each the input for OpenSpec changes, and a todo list; on later runs appends new stages without touching existing ones.
 disable-model-invocation: true
+argument-hint: "[revise NN]"
 allowed-tools:
   - Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
   - PowerShell(node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" *)
@@ -15,12 +16,21 @@ for implementation with OpenSpec — one feature brief per implementation stage,
 
 **This is the bridge between architect-flow and OpenSpec** — each brief is the input for `/opsx:propose` (after `/opsx:explore` while it has open technical questions), which turns it into OpenSpec changes: proposal, delta specs, design and tasks. `/opsx:apply` and `/opsx:archive` take it from there; the arch lines in `openspec/config.yaml` (Step 4) keep the brief in view while they do.
 
+## Invocation
+```
+/arch:finalize              ← brief the ready nodes, and handle outdated briefs
+/arch:finalize revise NN    ← the plan moved scope or order of stage NN, and every decision holds
+```
+Arguments for this run: $ARGUMENTS
+
+With `revise NN`, treat brief NN as listed in `BRIEFS_OUTDATED`, with the reason the user gives (a plan or scope change), and offer the options of its `STAGES` state (Gate Check 5). The user can also name briefs in the prompt for the same reason, also when `BRIEFS_OUTDATED` does not list them.
+
 ## Input
 - `.arch/index.json`
 - `.arch/ideas/[slug].md` — the node files listed in `index.json`
 - `.arch/project-context.md`
 - `.arch/todo-list.md` and `.arch/feature-briefs/` — if a previous run created them
-- `openspec/` — if present: `config.yaml` (or `config.yml`), the capability ids under `specs/`, the change names under `changes/` and `changes/archive/`, and the `proposal.md` of a change in `CHANGES_NOT_IN_A_BRIEF`
+- `openspec/` — if present: `config.yaml` (or `config.yml`), the capability ids under `specs/`, the change names under `changes/` and `changes/archive/`, and the `proposal.md` of a change on a `names` line under `CHANGES_NOT_IN_A_BRIEF`
 
 The live nodes are the entries in `index.json` → `nodes`; open node files through their `file` paths. `ideas/*.md` also matches `*.archived.md` (merged or split nodes) — never treat those as live nodes.
 
@@ -36,14 +46,14 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 Before proceeding, verify:
 
 1. **The gate is open** (`FINALIZE_GATE` in Current State): every blocking node is `ready` and `PROBLEMS` is none.
-   If it is closed — run **Changes line corrections** (check 5) first, then stop and list every reason:
+   If it is closed — run **Changes line corrections** (check 5) and an **Amend** of a brief the user named (`revise NN`) first, then stop and list every reason:
    > "Finalize is blocked:
    > - not ready: [blocking nodes] → /arch:explore, then /arch:decide
    > - [each PROBLEMS line] → [the skill that fixes it: /arch:decide for decisions, prerequisites and conflicts; /arch:map for connections]"
 
-   If it is open but `READY_NOT_IN_A_BRIEF` and `BRIEFS_OUTDATED` are both none, say there is nothing new to brief. Skip the other checks (except **Changes line corrections** in check 5) and Steps 1–3, run Step 4, give only the OpenSpec lines of Step 5, and stop. This is how a project that set up OpenSpec after finalizing gets the arch config.
+   If it is open but `READY_NOT_IN_A_BRIEF` and `BRIEFS_OUTDATED` are both none and the user named no brief, say there is nothing new to brief. Skip the other checks (except **Changes line corrections** in check 5) and Steps 1–3, run Step 4, give only the OpenSpec lines of Step 5, and stop. This is how a project that set up OpenSpec after finalizing gets the arch config.
 
-2. **Readiness re-check.** The script checks structure only. Read the node file of every node this run will put into a brief — `READY_NOT_IN_A_BRIEF`, plus the nodes of briefs you supersede or follow up in check 5 — and check it against "Readiness criteria" below. List each failure with its node and stop:
+2. **Readiness re-check.** The script checks structure only. Read the node file of every node this run will put into a brief — `READY_NOT_IN_A_BRIEF`, plus the nodes of briefs you supersede, follow up or amend in check 5 — and check it against "Readiness criteria" below. List each failure with its node and stop:
    > "[node] is not ready for a brief: [criterion and what is missing]. Resolve it with `/arch:decide [node]`."
    Write no brief for a node that fails.
 
@@ -64,21 +74,23 @@ Before proceeding, verify:
 5. **Earlier briefs** (`BRIEFS` in Current State, on any run after the first):
    - New stages group only `READY_NOT_IN_A_BRIEF` nodes (plus the nodes of briefs superseded below), are numbered after the highest existing `NN`, and use slugs that differ from existing ones.
    - **Changes line corrections** — handle these before the choices below; they touch no decisions, so they also run while the gate is closed. After the user confirms a correction, rewrite that brief's `- Changes:` line, then run `arch.mjs summary` again and use its `STAGES` below.
-     - For each change in `CHANGES_NOT_IN_A_BRIEF`, read its `proposal.md` (`openspec/changes/[change]/`, or `openspec/changes/archive/[date]-[change]/` when archived). If it names a brief, show that brief's `- Changes:` line and offer to put the change's name on it: ask whether it is one of the listed changes proposed under another name, or whether listed changes were merged, split or dropped. If the brief it names is marked `_Superseded by:_`, use the brief that mark points to instead, and tell the user to revise the change from it (`/opsx:update [change] @.arch/feature-briefs/[that brief]`) unless it already has tasks done.
+     - `CHANGES_NOT_IN_A_BRIEF` already read the proposals: act only on its `[change] names [brief]` lines, never on the `others:` line. For each, read that change's `proposal.md` (`openspec/changes/[change]/`, or `openspec/changes/archive/[date]-[change]/` when archived), show the brief's `- Changes:` line and ask: is the change one of the listed changes proposed under another name, or were listed changes merged, split or dropped? Then correct the `- Changes:` line. If it is none of these (the change only refers to the brief), add its name to the brief's `_Related changes:_` header line (create the line after the last header line when it is missing) after the user confirms, so it leaves the list. If the brief it names is marked `_Superseded by:_`, use the brief that mark points to instead, and tell the user to revise the change from it (`/opsx:update [change] @.arch/feature-briefs/[that brief]`) unless it already has tasks done.
      - For each `STAGES` line where a `not proposed` change sits next to a sibling that is archived or has tasks done, ask whether that change is still planned, merged into another change, or dropped; remove it from `- Changes:` only after the user confirms it was merged or dropped.
-   - For each brief in `BRIEFS_OUTDATED`, show what changed since its `_Arch revision:_` (the listed nodes' History lines and current decisions) and its `STAGES` state, and ask the user to choose between the options that state allows:
+   - For each brief in `BRIEFS_OUTDATED`, and each brief the user named (`revise NN`), show what changed since its `_Arch revision:_` and `_Arch context:_` (the listed nodes' History lines and current decisions, a superseded stage it requires, or the plan change the user named) and its `STAGES` state, and ask the user to choose between the options that state allows. Amend runs while the gate is closed too; Supersede and Follow up need the open gate — while it is closed, write nothing else for a named brief.
 
      | `STAGES` state | Options |
      |---|---|
-     | `not started` | Supersede or Keep |
-     | `planned` | Supersede or Keep — the replacement keeps the old brief's change names; tell the user to revise each proposed change with `/opsx:update [change] @.arch/feature-briefs/[new brief]` (its proposal must name the new brief) before `/opsx:apply` — a `proposed (no tasks yet)` change is continued with `/opsx:propose [change] @.arch/feature-briefs/[new brief]` instead. `/opsx:update` revises only the artifacts that exist: a change without `design.md` first gets one with `/opsx:continue [change]` (expanded profile) or by having the agent follow `openspec instructions design --change [change]`, then `/opsx:update` |
+     | `not started` | Amend, Supersede or Keep |
+     | `planned` | Amend, Supersede or Keep — after an Amend, tell the user to revise each proposed change with `/opsx:update [change] @.arch/feature-briefs/[brief]` before `/opsx:apply`. The replacement keeps the old brief's change names; tell the user to revise each proposed change with `/opsx:update [change] @.arch/feature-briefs/[new brief]` (its proposal must name the new brief) before `/opsx:apply` — a `proposed (no tasks yet)` change is continued with `/opsx:propose [change] @.arch/feature-briefs/[new brief]` instead. `/opsx:update` revises only the artifacts that exist: a change without `design.md` first gets one with `/opsx:continue [change]` (expanded profile) or by having the agent follow `openspec instructions design --change [change]`, then `/opsx:update` |
      | `in progress`, `done` | Follow up or Keep |
      | `unknown`, or any stage under a `STAGES … — no openspec/ directory here` header | ask the user how far the stage got — nothing proposed, proposed but not applied, or applied (a pre-3.1 todo-list Status cell is the default answer) — then use the matching row above |
 
-     - **Supersede**: write a replacement brief for the current decisions with `_Supersedes: [old file]_` in its header, add `_Superseded by: [new file] ([date])_` to the old brief's header, and mark the old todo-list row superseded (Step 3).
+     - **Amend**: edit the brief's body in place so it matches the current node decisions and the plan's scope for the stage. It adds no decision. Set `_Arch revision:_` and `_Arch context:_` to the current revisions, and add one header line `_Amended: [date] — [one-line reason]_` (replace an existing one). Names on `- Changes:` change only under **Changes line corrections**.
+     - **Supersede**: write a replacement brief for the current decisions with `_Supersedes: [old file]_` in its header, add `_Superseded by: [new file] ([date])_` to the old brief's header, and mark the old todo-list row superseded (Step 3). Then repoint: in the `- Requires:` line of every brief that is not superseded and in the Depends On cell of every todo-list row, replace the old stage number with the new one. Show each todo-list `## Notes` line that names the old stage with a proposed fix, and change it only after the user confirms.
      - **Follow up**: write a brief for the delta only (what changes relative to the implemented stage) that depends on the old stage, with `_Follows up: [old file]_` in its header; in the old brief's header, add `_Followed up by: [new file] ([date])_`, remove archived slugs from `_Arch nodes covered:_` (also in the briefs it follows up), and set `_Arch revision:_` to the current revisions of the nodes it still covers. A change of the old stage that already has tasks done finishes on the old brief's decisions. For each one with no task done in `STAGES` (`not proposed`, `proposed (no tasks yet)`, `0/M tasks`), the follow-up brief's `## OpenSpec Handoff` says it takes the follow-up brief too: not proposed or `proposed (no tasks yet)` → `/opsx:propose [change] @.arch/feature-briefs/[old brief] @.arch/feature-briefs/[follow-up brief]` (it continues an existing change); `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[follow-up brief]` before `/opsx:apply`.
      - **Keep** — the change does not affect the brief (never when a covered node was archived): set the old brief's `_Arch revision:_` to the current revisions of its nodes.
-   - These are the only edits ever made to existing briefs and todo-list rows: the header marks above (`_Superseded by:_`, `_Followed up by:_`, `_Arch revision:_` bumps, archived-slug removal from `_Arch nodes covered:_`), a `- Changes:` line corrected under **Changes line corrections**, the superseded mark on a todo-list row, and the one-time 3.1 legend update of a pre-3.1 todo list (Step 3).
+     - Keep, Follow up and Amend also set `_Arch context:_` to the current revisions: an archived context slug becomes the node that replaced it, or is dropped. For a brief with a `requires [old] (superseded by [new])` reason, every option, Keep included, repoints that `- Requires:` entry and the todo-list row's Depends On cell to the new stage.
+   - These are the only edits ever made to existing briefs and todo-list rows: the header marks above (`_Superseded by:_`, `_Followed up by:_`, `_Amended:_`, `_Arch revision:_` and `_Arch context:_` bumps, archived-slug removal from `_Arch nodes covered:_`, `_Related changes:_`), an Amend's body edits, a `- Changes:` line corrected under **Changes line corrections**, `- Requires:` and Depends On repoints to a superseding stage, the todo-list Notes fixes the user confirmed, the superseded mark on a todo-list row, and the one-time 3.1 legend update of a pre-3.1 todo list (Step 3). A new header line goes right after the last existing one, so it stays within the first 15 lines that `arch.mjs` reads.
 
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
@@ -145,6 +157,7 @@ The brief is the input for `/opsx:propose`, so its sections map onto the change'
 
 Before writing:
 - If `openspec/specs/` exists, list the existing capability ids: every directory under `openspec/specs/` that holds a `spec.md`; the id is its path relative to `specs/` (e.g. `identity/user-auth`). The Handoff's Capabilities line marks these as Modified.
+- Fill `_Arch context:_` with every node the brief's text relies on without covering it — a decision it cites, a node it names — at its `rev=` in Current State `NODES`. Leave the line out when there is none.
 - Change names in a new brief must not appear on another non-superseded brief's `- Changes:` line, as a directory under `openspec/changes/`, or as `[date]-[name]` under `openspec/changes/archive/` — except in the replacement for a `planned` stage (Gate Check 5), which keeps the old names.
 
 Use the feature brief template below.
@@ -200,7 +213,7 @@ operations:
 > Each stage becomes the OpenSpec changes listed in its brief's `## OpenSpec Handoff`:
 > - Open technical questions first: `/opsx:explore` with the brief
 > - Then per change: `/opsx:propose [change-name] @.arch/feature-briefs/[NN-slug].md` — the change name exactly as on the brief's `- Changes:` line, which is how `/arch:status` tracks it → `/opsx:apply` → `/opsx:archive` (`/opsx:verify` too if your OpenSpec profile has it — `openspec config profile`)
-> - [Each `planned` stage superseded this run: `/opsx:update [change] @.arch/feature-briefs/[new brief]` before `/opsx:apply`]
+> - [Each `planned` stage superseded or amended this run: `/opsx:update [change] @.arch/feature-briefs/[new or amended brief]` before `/opsx:apply`]
 >
 > `/arch:status` tracks each stage from `openspec/changes/` — nothing to update by hand; `/arch:audit openspec` checks the changes against the briefs.
 >
@@ -224,6 +237,7 @@ _Stage: [NN]_
 _Created: [date] via /arch:finalize_
 _Arch nodes covered: [comma-separated node slugs]_
 _Arch revision: [each covered node as slug=N, N its rev= in Current State NODES, comma-separated]_
+_Arch context: [each node the text relies on that it does not cover — a decision it cites, a node it names — as slug=N. Omit the line when there is none]_
 [replacement only: _Supersedes: [NN-slug.md]_ · follow-up only: _Follows up: [NN-slug.md]_]
 
 ## Goal
@@ -311,12 +325,13 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 
 ## Rules
 - Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
-- Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
+- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set` and `archive` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Outside `.arch/`, write only `context:`, `rules:` and `operations:` in `openspec/config.yaml` (or `config.yml`), after the user confirms
-- Write nothing while the gate is closed (except Changes line corrections, recorded with `arch.mjs log finalize "Changes line corrected: [brief]"`) or a readiness re-check fails
+- Write nothing while the gate is closed (except Changes line corrections, `_Related changes:_` lines and the Amend of a brief the user named, recorded with `arch.mjs log finalize "[what was corrected or amended]: [brief]"`) or a readiness re-check fails
 - Existing briefs and todo-list rows are never rewritten — later runs append; the only edits are those listed in Gate Check 5
+- Write the briefs and the todo list yourself, in this conversation. Do not give them to subagents: they do not get this skill's template and rules
 - Do not invent stage groupings without user confirmation
 - Feature briefs must accurately reflect decisions from node files — do not add new decisions
 - Open technical questions in briefs must be genuinely open — do not fill them with guesses

@@ -1,0 +1,31 @@
+{
+  "project": "Pantry",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "stack",
+      "name": "Stack",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/stack.md",
+      "summary": "TypeScript monolith on Node."
+    },
+    {
+      "slug": "catalog",
+      "name": "Recipe Catalog",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/catalog.md",
+      "summary": "Recipes in PostgreSQL with tags."
+    },
+    {
+      "slug": "search",
+      "name": "Search",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/search.md",
+      "summary": "Full-text search in PostgreSQL."
+    }
+  ],
+  "connections": []
+}

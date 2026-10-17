@@ -151,18 +151,29 @@ IMPLEMENTATION (OpenSpec)
   ◇ 03 Export       planned — export-csv proposed (no tasks yet)
   ○ 04 Canvas       not started
   ⚠️  03 is planned but depends on 02, which is not done
-  Not from a brief: fix-typo (active) — renamed during propose, or proposed from a superseded brief? /arch:finalize can correct the brief's Changes line; /arch:audit openspec checks it
+  Not from a brief: 3, 1 of them names a brief
+    add-login (active) names 02-auth.md — renamed during propose, or proposed from a superseded brief? /arch:finalize corrects the brief's Changes line
   → Next: /opsx:apply add-auth   (stage 02)
 ```
 
 - `?` marks an `unknown` stage, followed by its reason from the `STAGES` line.
 - Warn when a `planned`, `in progress` or `done` stage depends on a stage that is not `done` — the stages its brief's `## Dependencies → Requires` names. A Requires entry naming a superseded stage means its replacement (follow `_Superseded by:_`).
+- Before you give `Next`, route with this table, the same one `/arch:decide` uses, when the user asks whether something needs an arch skill first:
+
+| What changed | Run |
+| --- | --- |
+| The chosen approach of a node (its `## Decision`) | `/arch:decide [node]` → revisit |
+| A fact from implementation or a spike, and the decision holds | `/arch:explore [node]` |
+| Scope or order of a stage, and every decision holds | `/arch:finalize revise NN` (the user types it) |
+| A brief in `BRIEFS_OUTDATED` | `/arch:finalize` (the user types it) |
+| Nothing: you want to start or continue a stage | the `Next` command of `/arch:status`, no arch skill — a `ready` node needs no `/arch:decide` |
+
 - Next: the lowest-numbered stage that is not `done` and whose Requires stages are all `done`. Within it, take the first change in `STAGES` order that is not archived: `not proposed` → `/opsx:explore` with the brief, then `/opsx:propose [change] @.arch/feature-briefs/[brief]` if the brief's Handoff says to start with explore, otherwise just that `/opsx:propose`; `proposed (no tasks yet)` → the same `/opsx:propose` (it offers to continue the existing change); `N/M tasks` with N < M → `/opsx:apply [change]`; N = M → `/opsx:archive [change]`. If that stage is `unknown`, give its reason instead of a command; if every stage is `done`, say so. Then adjust it:
   - The stage's brief has `_Followed up by:_` and the change has no task done (`not proposed`, `proposed (no tasks yet)`, `0/M tasks`) → it takes the follow-up brief too: not proposed or `proposed (no tasks yet)` → add `@.arch/feature-briefs/[follow-up]` to its `/opsx:propose` (it continues an existing change); `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[follow-up]`, then `/opsx:apply [change]`. `[follow-up]` is each brief down the `_Followed up by:_` chain to the newest (a superseded one → the brief its `_Superseded by:_` names). A change with tasks done finishes on its brief's decisions.
   - The stage's brief has `_Supersedes:_`, the stage is `planned` and the change shows `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[brief]` (if not done yet), then `/opsx:apply [change]`; a `proposed (no tasks yet)` change keeps the base `/opsx:propose` command, which continues it.
   - The change is `not proposed` and a sibling in the stage is archived or has tasks done → add "(merged or dropped? /arch:finalize corrects the brief's Changes line)".
-  - `CHANGES_NOT_IN_A_BRIEF` lists an active change [x] and Next is a `/opsx:propose` → add "(if [x] is [change] under another name, run /arch:finalize first)".
-- `CHANGES_NOT_IN_A_BRIEF` lists changes → one `Not from a brief:` line with them (active ones marked `(active)`), asking "renamed during propose, or proposed from a superseded brief? /arch:finalize can correct the brief's Changes line".
+  - The `others:` line of `CHANGES_NOT_IN_A_BRIEF` lists an active change [x] and Next is a `/opsx:propose` → add "(if [x] is [change] under another name, run /arch:finalize first)".
+- `CHANGES_NOT_IN_A_BRIEF` lists changes → one `Not from a brief: [N], [M] of them name a brief` line, then one line per `[change] names [brief]` entry (active ones marked `(active)`), asking "renamed during propose, or proposed from a superseded brief? /arch:finalize corrects the brief's Changes line". The changes on its `others:` line get no line and no question, and no proposal of theirs is read.
 - The `STAGES` header ends `— no openspec/ directory here` → the block is one line: "OpenSpec is not set up — run `openspec init`, then `/arch:finalize` adds the arch config."
 
 ### Step 7 — Path to /arch:finalize
@@ -173,7 +184,7 @@ PATH TO FINALIZE
   Required: [N] blocking nodes must reach `ready`
   Remaining: [N] nodes still at raw-idea or explored
   Estimated sessions needed: [rough count based on current depth]
-  Briefs: [BRIEFS_OUTDATED count, if briefs exist] outdated → /arch:finalize supersedes or follows them up
+  Briefs: [BRIEFS_OUTDATED count, if briefs exist] outdated → /arch:finalize supersedes, follows up or amends them
 ```
 
 ---
@@ -194,3 +205,4 @@ Show only nodes at `ready` maturity. Confirm they meet the criteria for /arch:fi
 - Do not suggest decisions — that is /arch:decide's job
 - Be direct about what is blocking — do not soften blockers
 - If `FINALIZE_GATE` is open — say so clearly and suggest /arch:finalize, unless nothing is left to brief (then the Step 6 `Next` command)
+- `/arch:finalize` and `/arch:new` start only when the user types them. Tell the user to type the command. Do not offer to run it and do not call it with the Skill tool. Never write feature briefs, todo-list rows or brief header lines outside a finalize run

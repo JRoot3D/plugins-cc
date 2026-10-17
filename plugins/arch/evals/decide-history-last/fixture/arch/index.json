@@ -1,0 +1,15 @@
+{
+  "project": "Clinic",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "db",
+      "name": "Database",
+      "priority": "blocking",
+      "maturity": "explored",
+      "file": "ideas/db.md",
+      "summary": "Relational store for appointments."
+    }
+  ],
+  "connections": []
+}

@@ -2,6 +2,25 @@
 
 Newest first. Each version says what it changes, then what that means for a board that already exists: plan an upgrade from "What changes for an existing board" alone.
 
+## 4.2.0 — 2026-10-17
+
+### Changes
+
+- A brief can list the nodes its text relies on without covering them: `_Arch context: slug=N_`. A later change to one of them puts the brief in `BRIEFS_OUTDATED` (`context SLUG …`). `/arch:finalize` fills the line in new briefs.
+- A brief whose `- Requires:` line names a superseded stage is outdated (`requires OLD (superseded by NEW)`). Every finalize option repoints that entry, and a supersede now repoints the `- Requires:` lines of the other briefs and the todo list's Depends On cells.
+- `/arch:finalize` can **amend** a brief that has no tasks done: its text is brought in line with the current decisions and the plan, marked `_Amended: date — reason_`. `/arch:finalize revise NN` offers amend, supersede or follow up for a brief whose stage moved in the plan while every decision held.
+- `CHANGES_NOT_IN_A_BRIEF` reads the proposals itself: `N — M name a brief`, one line per change whose proposal names a brief, then `others:`. A brief's `_Related changes: a, b_` takes changes that only refer to it off the list.
+- `/arch:decide` asks what changed before it offers a revisit, and routes plan-only changes to `/arch:finalize revise NN` and implementation facts to `/arch:explore` (the same table is in `/arch:status`). A revisit looks for text the old choice left in Notes, Triage and Connections and marks or rewrites what the user approves; `/arch:audit` reports such stale lines.
+- Skills tell the user to type `/arch:finalize` and `/arch:new` instead of offering to run them. A History line goes last in `## History`, and a node file is read again after `set` or `archive` rewrote it.
+
+### What changes for an existing board
+
+- Files rewritten: none by itself. Briefs, the todo list and node files change only in a finalize or decide run, after the user picks an option.
+- New optional fields: `_Arch context:_`, `_Amended:_` and `_Related changes:_` in brief headers. 4.1.0 and 4.0.0 read them as unknown header lines and ignore them.
+- Output: `BRIEFS_OUTDATED` lists a brief that requires a superseded stage until a finalize run repoints it — on a board where a brief still requires one, it shows outdated right after the upgrade. `CHANGES_NOT_IN_A_BRIEF` becomes a header with indented lines; the set of changes is the same. No other `summary` line changes.
+- Manual steps: none. To clear a `requires` reason, run `/arch:finalize` and choose Keep (or Amend) for that brief.
+- Mixed versions: an older clone does not show the `requires` and `context` reasons, and its Keep does not bump `_Arch context:_`, so a `context` reason can stay on new clones until a new-version finalize runs. index.json, sessions.jsonl and the lock ref do not change.
+
 ## 4.1.0 — 2026-10-17
 
 ### Changes
