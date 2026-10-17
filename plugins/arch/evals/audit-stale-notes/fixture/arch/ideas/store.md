@@ -66,8 +66,8 @@ ready
 - Reports run nightly.
 
 ## Triage
-### Gotchas
 > These notes come from before the revisit of 2026-10-05. Their MongoDB details do not apply. The current decision is in "Decision".
+### Gotchas
 - The Mongo shard key must be the tenant id.
 
 ## Connections

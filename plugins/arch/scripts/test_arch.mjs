@@ -555,6 +555,13 @@ describe('arch.mjs', () => {
     }
   })
 
+  test('an .arch/ that is a repository of its own is no board worktree', () => {
+    assert.equal(spawnSync('git', ['init', '-q', '--separate-git-dir', path.join(root, 'arch-git'), path.join(root, '.arch')]).status, 0)
+    assert.ok(fs.statSync(path.join(root, '.arch/.git')).isFile())
+    has(run('set', 'stack', 'summary', 'kept as before').out, 'OK stack summary')
+    assert.equal(run('can-edit', path.join(root, '.arch/ideas/stack.md')).out, 'OK\n')
+  })
+
   test('a missing or broken index never fails summary', () => {
     write(root, 'index.json', '{broken')
     let r = run('summary')
@@ -819,6 +826,43 @@ describe('shared board', () => {
     has(ok(alice, 'release'), 'freed a, b')
   })
 
+  test('release refuses a node file moved away from a key you do not hold', () => {
+    ok(alice, 'claim', 'c')
+    fs.renameSync(idea(alice, 'b'), idea(alice, 'c'))
+    has(arch(alice, 'release').out, 'release would push changes to b, which you do not hold')
+  })
+
+  test('release checks the locks the remote holds now', () => {
+    ok(alice, 'claim', 'a')
+    fs.appendFileSync(idea(alice, 'a'), 'alice was here\n')
+    ok(bob, 'unlock', 'a', '--force')
+    ok(bob, 'claim', 'a')
+    const r = arch(alice, 'release') // her local lock ref still says she holds a
+    assert.equal(r.code, 1)
+    has(r.out, 'release would push changes to a, which you do not hold')
+  })
+
+  test('release compares with what the pull fetched, whatever the fetch refspec', () => {
+    const code = sh(bob, 'branch', '--show-current')
+    sh(bob, 'config', 'remote.origin.fetch', `+refs/heads/${code}:refs/remotes/origin/${code}`)
+    ok(alice, 'claim', 'b')
+    fs.appendFileSync(idea(alice, 'b'), 'by alice\n')
+    ok(alice, 'release')
+    ok(bob, 'claim', 'a')
+    fs.appendFileSync(idea(bob, 'a'), 'by bob\n')
+    has(ok(bob, 'release'), 'freed a') // b came with the pull, not from bob
+  })
+
+  test('a linked code worktree neither joins the board nor fetches', () => {
+    const wt = path.join(base, 'alice-wt')
+    sh(alice, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    const trace = path.join(base, 'trace')
+    const r = spawnSync(process.execPath, [SCRIPT, 'sync'], { cwd: wt, encoding: 'utf8', env: { ...process.env, GIT_TRACE: trace } })
+    has(r.stdout, 'BOARD_NOT_HERE — this is a linked worktree')
+    lacks(fs.readFileSync(trace, 'utf8'), 'fetch')
+    assert.ok(!fs.existsSync(path.join(wt, '.arch')))
+  })
+
   test('a second archive of a node counts for its key', () => {
     ok(alice, 'claim', 'a')
     fs.writeFileSync(path.join(alice, '.arch/ideas/a.archived.md'), node('a', 'core', 'raw-idea'))
@@ -834,6 +878,7 @@ describe('shared board', () => {
     sh(bob, 'remote', 'set-url', 'origin', path.join(base, 'gone.git'))
     has(arch(bob, 'set', 'a', 'summary', 'x').out, 'refs/arch/locks could not be fetched from origin')
     assert.equal(arch(bob, 'can-edit', idea(bob, 'a')).code, 1)
+    for (const cmd of [['claim', 'a'], ['release']]) has(arch(bob, ...cmd).out, 'refs/arch/locks could not be fetched')
     assert.equal(arch(bob, 'summary').code, 0)
   })
 

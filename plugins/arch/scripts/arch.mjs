@@ -274,11 +274,24 @@ const gitFiles = () => {
 const boardGit = args => git(['-C', ARCH, ...args])
 const boardBranch = () => readLocks()?.branch ?? null
 
-// .arch/ is a linked git worktree of its own (its .git a file), as share and sync make the board
+// .arch/ is a linked worktree of this project's repository, as share and sync make the board: its .git is a file,
+// and it shares the project's git directory (a submodule or a repository of its own does not)
+// git's directory paths from dir, resolved (git prints them relative to dir; --path-format needs git 2.31)
+const gitPath = (dir, flag) => {
+  const r = git(['-C', dir, 'rev-parse', flag])
+  return r.ok ? realPath(path.resolve(dir, r.out)) : null
+}
 const boardWorktree = () => {
   if (!stat(`${ARCH}/.git`)?.isFile()) return false
   const top = boardGit(['rev-parse', '--show-toplevel'])
-  return top.ok && realPath(top.out) === realPath(ARCH)
+  if (!top.ok || realPath(top.out) !== realPath(ARCH)) return false
+  const board = gitPath(ARCH, '--git-common-dir')
+  return board !== null && board === gitPath('.', '--git-common-dir')
+}
+// a code checkout made with git worktree add: the board's .arch/ lives in the main worktree, not here
+const linkedWorktree = () => {
+  const dir = gitPath('.', '--git-dir')
+  return dir !== null && dir !== gitPath('.', '--git-common-dir')
 }
 // .arch/ checked out as a worktree of the board branch
 const isBoard = name => boardWorktree() && boardGit(['symbolic-ref', '-q', '--short', 'HEAD']).out === name
@@ -455,7 +468,10 @@ const mergeList = (key, sides, at, conflicts) => {
 const STANDALONE = {
   sync() {
     if (!git(['rev-parse', '--git-dir']).ok) return 'LOCKS not shared — not a git repository'
-    // session start runs this in every repository without .arch/: only one whose remote holds a board fetches
+    // session start runs this in every repository without .arch/: only one whose remote holds a board fetches, and
+    // never a linked code worktree, which shares the locks ref but not the board's worktree
+    if (!stat(ARCH) && linkedWorktree())
+      return `BOARD_NOT_HERE — this is a linked worktree; the board is at ${ARCH}/ in the main worktree`
     if (!stat(ARCH) && !hasLocks() && !boardOnRemote()) return 'LOCKS not shared'
     const fetched = fetchLocks()
     if (!shared()) return 'LOCKS not shared'
@@ -1337,7 +1353,7 @@ const COMMANDS = {
 
   claim(data, keys) {
     keys.forEach(checkKey)
-    if (!shared() && !fetchLocks().ok) return 'OK not shared — no lock needed'
+    if (!shared() && !fetchLocks().ok) return noLocks() || 'OK not shared — no lock needed'
     const name = requireBoard()
     setUpGit()
     const who = me()
@@ -1359,11 +1375,14 @@ const COMMANDS = {
   },
 
   release() {
-    if (!shared()) return 'OK not shared — nothing to release'
+    if (!shared()) return noLocks() || 'OK not shared — nothing to release'
     const name = requireBoard()
     setUpGit()
     gitFiles()
     const who = me()
+    // the locks as the remote holds them now: a lock force-freed and taken by someone else is not yours any more
+    const fetched = fetchLocks()
+    if (!fetched.ok) fail(`cannot fetch ${LOCKS_REF} from ${remote()}: ${fetched.err} — your locks are kept`)
     const mine = Object.entries(readLocks()?.nodes ?? {})
       .filter(([, h]) => isMine(h, who))
       .map(([key]) => key)
@@ -1377,8 +1396,10 @@ const COMMANDS = {
         fail(`pulling the board branch ${name} failed and was undone; your locks are kept — run git -C ${ARCH} pull, resolve it, then /arch-release:\n${pulled.failed}`)
       left ??= pulled.left
       // what the push adds: whatever made the change (a skill, a shell edit), a key you do not hold stops it
-      const upstream = `${remote()}/${name}`
-      const changed = boardGit(['diff', '--name-only', '-z', upstream, 'HEAD'])
+      // FETCH_HEAD: the board branch the pull just fetched (per worktree; a narrowed fetch refspec leaves the
+      // remote-tracking branch behind). --no-renames: a moved node file counts for the key it leaves too.
+      const upstream = 'FETCH_HEAD'
+      const changed = boardGit(['diff', '--name-only', '--no-renames', '-z', upstream, 'HEAD'])
       if (!changed.ok) fail(`git diff ${upstream} HEAD: ${changed.err} — your locks are kept`)
       // archive names a second archive of a node SLUG-2.archived.md: it counts for SLUG too
       const held = file => {

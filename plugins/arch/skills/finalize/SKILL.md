@@ -46,7 +46,7 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 Before proceeding, verify:
 
 1. **The gate is open** (`FINALIZE_GATE` in Current State): every blocking node is `ready` and `PROBLEMS` is none.
-   If it is closed — run **Changes line corrections** (check 5) and an **Amend** of a brief the user named (`revise NN`) first, then stop and list every reason:
+   If it is closed — run **Changes line corrections** (check 5) and an **Amend** of a brief the user named (`revise NN`) first — the Amend only after the readiness re-check (check 2) passes for every node the brief covers — then stop and list every reason:
    > "Finalize is blocked:
    > - not ready: [blocking nodes] → /arch:explore, then /arch:decide
    > - [each PROBLEMS line] → [the skill that fixes it: /arch:decide for decisions, prerequisites and conflicts; /arch:map for connections]"
