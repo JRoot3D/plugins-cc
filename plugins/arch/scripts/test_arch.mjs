@@ -364,6 +364,80 @@ describe('arch.mjs', () => {
     }
   })
 
+  test('rename-node keeps revision and coverage', () => {
+    run('log', 'decide', 'x', '--node', 'sync')
+    run('log', 'map', 'full map', '--full')
+    write(root, 'feature-briefs/01-x.md', '_Arch nodes covered: stack, sync_\n_Arch revision: stack=0, sync=1_\n')
+    write(root, 'feature-briefs/02-y.md', '_Arch nodes covered: sync_\n_Arch revision: 2_\n') // pre-4.0 numeric revision
+    const before = fs.readFileSync(path.join(root, '.arch/sessions.jsonl'), 'utf8')
+    has(run('rename-node', 'sync', 'core-sync').out, 'OK renamed sync -> core-sync — these still name sync: feature-briefs/01-x.md, feature-briefs/02-y.md')
+    assert.ok(!fs.existsSync(path.join(root, '.arch/ideas/sync.md')))
+    assert.ok(fs.existsSync(path.join(root, '.arch/ideas/core-sync.md')))
+    const after = indexNow()
+    assert.deepEqual(after.nodes.find(n => n.slug === 'core-sync').file, 'ideas/core-sync.md')
+    assert.deepEqual(after.aliases, { sync: 'core-sync' })
+    assert.equal(fs.readFileSync(path.join(root, '.arch/sessions.jsonl'), 'utf8'), before) // sessions are never rewritten
+    let out = run('summary').out
+    has(out, ' core-sync h=1 rev=1 — ')
+    has(out, 'BRIEFS_OUTDATED none')
+    has(out, 'none (map is fresh)')
+    run('log', 'decide', 'y', '--node', 'core-sync')
+    out = run('summary').out
+    has(out, 'BRIEFS_OUTDATED 2\n  01-x.md — core-sync decide\n  02-y.md — core-sync decide\n')
+    has(out, 'nodes changed since: core-sync')
+    // a second rename keeps one lookup for every old slug
+    has(run('rename-node', 'core-sync', 'sync2').out, 'OK renamed core-sync -> sync2')
+    assert.deepEqual(indexNow().aliases, { sync: 'sync2', 'core-sync': 'sync2' })
+    has(run('summary').out, ' sync2 h=1 rev=2 — ')
+    // an old slug cannot come back as a new node: its sessions count for sync2
+    write(root, 'ideas/sync.md', node('sync', 'core', 'raw-idea'))
+    has(run('add-node', 'sync', 'S', 'core', 'x').out, 'ERROR: sync is the old slug of sync2')
+  })
+
+  test('rename-node refuses what would merge two histories, and writes nothing', () => {
+    fs.appendFileSync(path.join(root, '.arch/sessions.jsonl'), '{"date":"2026-09-02","skill":"explore","node":"gone","summary":"s"}\n')
+    const index = fs.readFileSync(path.join(root, '.arch/index.json'), 'utf8')
+    for (const [args, error] of [
+      [['sync', 'stack'], "node 'stack' already exists"],
+      [['sync', 'gone'], 'sessions.jsonl already names gone'],
+      [['sync', 'old'], 'ideas/old.archived.md exists'],
+      [['nope', 'x'], "no live node 'nope'"],
+      [['sync', 'Bad_Slug'], 'NEW must be lowercase words'],
+    ]) {
+      const r = run('rename-node', ...args)
+      assert.equal(r.code, 1, r.out)
+      has(r.out, error)
+    }
+    assert.equal(fs.readFileSync(path.join(root, '.arch/index.json'), 'utf8'), index)
+    assert.ok(fs.existsSync(path.join(root, '.arch/ideas/sync.md')))
+  })
+
+  test('a done stage names the capabilities it never created', () => {
+    const caps = (name, changes, line) => write(root, `feature-briefs/${name}`, `${brief(changes)}- Capabilities: ${line}\n`)
+    caps('01-a.md', 'init', 'init — New: `auth` · ui — none — skip_specs: true')
+    caps('02-b.md', 'api', 'api — Modified: `core-api` (a note) · New: `identity/user-auth`')
+    caps('03-c.md', 'later', 'later — New: `export`')
+    for (const rel of ['archive/2026-10-02-init', 'archive/2026-10-03-api', 'later']) change(root, rel)
+    let out = run('summary').out
+    has(out, '  01-a.md — done: init archived 2026-10-02 — capability missing: auth\n')
+    has(out, '  02-b.md — done: api archived 2026-10-03 — capability missing: core-api, identity/user-auth\n')
+    has(out, '  03-c.md — planned: later proposed (no tasks yet)\n') // not done: no suffix
+    for (const id of ['auth', 'core-api', 'identity/user-auth']) {
+      fs.mkdirSync(path.join(root, 'openspec/specs', id), { recursive: true })
+      fs.writeFileSync(path.join(root, 'openspec/specs', id, 'spec.md'), 'x')
+    }
+    out = run('summary').out
+    has(out, '  01-a.md — done: init archived 2026-10-02\n')
+    has(out, '  02-b.md — done: api archived 2026-10-03\n')
+  })
+
+  test('records pending need git', () => {
+    write(root, 'ideas/stack.md', node('stack', 'blocking', 'decided', '- 2026-09-01 /arch:new — a', `${DECISION}_Record: docs/adr/0001.md_\n`))
+    has(run('summary').out, 'RECORDS_PENDING unknown — not a git repository')
+    write(root, 'ideas/stack.md', node('stack', 'blocking', 'decided', '- 2026-09-01 /arch:new — a', DECISION))
+    lacks(run('summary').out, 'RECORDS_PENDING')
+  })
+
   test('stages from openspec changes', () => {
     for (const [name, changes, header = ''] of [
       ['01-a.md', 'init'],
@@ -763,6 +837,66 @@ describe('shared board', () => {
     assert.equal(arch(bob, 'summary').code, 0)
   })
 
+  test('rename-node needs both slugs held', () => {
+    ok(alice, 'claim', 'a')
+    has(arch(alice, 'rename-node', 'a', 'a2').out, 'a2 is not claimed')
+    ok(alice, 'claim', 'a2')
+    has(ok(alice, 'rename-node', 'a', 'a2'), 'a clone on arch before 4.3 shows the briefs that name a as outdated')
+    has(ok(alice, 'release'), 'freed a, a2')
+    ok(bob, 'sync')
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(bob, '.arch/index.json'), 'utf8')).aliases, { a: 'a2' })
+  })
+
+  test('records pending until they are on the default branch', () => {
+    sh(bob, 'remote', 'set-head', 'origin', '-a')
+    const main = sh(bob, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+    const commit = (date, text) => {
+      fs.mkdirSync(path.join(bob, 'docs/adr'), { recursive: true })
+      fs.writeFileSync(path.join(bob, 'docs/adr/0001.md'), text)
+      sh(bob, 'add', 'docs/adr/0001.md')
+      const env = { ...process.env, GIT_COMMITTER_DATE: `${date}T12:00:00Z`, GIT_AUTHOR_DATE: `${date}T12:00:00Z` }
+      assert.equal(spawnSync('git', ['commit', '-q', '-m', 'adr'], { cwd: bob, env }).status, 0)
+      sh(bob, 'push', '-q', 'origin', 'HEAD')
+    }
+    commit('2026-10-01', 'one')
+    ok(bob, 'claim', 'a')
+    const decided = record => {
+      fs.writeFileSync(idea(bob, 'a'), node('a', 'core', 'decided', '', `${DECISION}${record}\n`))
+      return ok(bob, 'summary')
+    }
+    decided('')
+    ok(bob, 'set', 'a', 'maturity', 'decided')
+    has(decided('_Record: docs/adr/0001.md_'), `RECORDS_PENDING (on ${main}) none\n`)
+    has(decided('_Record: docs/adr/0001.md @ 2026-10-05_'), `RECORDS_PENDING (on ${main}) a (docs/adr/0001.md 2026-10-01 < 2026-10-05)\n`)
+    sh(bob, 'switch', '-q', '-c', 'other')
+    commit('2026-10-06', 'on another branch')
+    sh(bob, 'switch', '-q', '-')
+    has(ok(bob, 'summary'), 'a (docs/adr/0001.md 2026-10-01 < 2026-10-05)') // another branch does not count
+    commit('2026-10-05', 'two')
+    has(ok(bob, 'summary'), `RECORDS_PENDING (on ${main}) none\n`)
+    has(decided('_Record: docs/adr/x.md, docs/adr/0001.md @ 2026-10-05_'), 'a (docs/adr/x.md missing)')
+    lacks(decided(''), 'RECORDS_PENDING')
+  })
+
+  test('a capability that exists only on a remote branch counts', () => {
+    fs.mkdirSync(path.join(alice, '.arch/feature-briefs'))
+    fs.writeFileSync(path.join(alice, '.arch/feature-briefs/01-x.md'), `${brief('setup')}- Capabilities: setup — New: \`auth\`\n`)
+    const put = rel => {
+      fs.mkdirSync(path.dirname(path.join(bob, rel)), { recursive: true })
+      fs.writeFileSync(path.join(bob, rel), 'x')
+      sh(bob, 'add', rel)
+      sh(bob, 'commit', '-q', '-m', rel)
+      sh(bob, 'push', '-q', 'origin', 'HEAD')
+    }
+    put('openspec/changes/archive/2026-10-05-setup/proposal.md')
+    ok(alice, 'sync')
+    has(ok(alice, 'summary'), '01-x.md — done: setup archived 2026-10-05 — capability missing: auth\n')
+    sh(bob, 'switch', '-q', '-c', 'feat/specs')
+    put('openspec/specs/auth/spec.md')
+    ok(alice, 'sync')
+    has(ok(alice, 'summary'), '01-x.md — done: setup archived 2026-10-05\n')
+  })
+
   test('sync warns when the board branch lost its merge drivers; release commits them again', () => {
     board(alice, 'rm', '-q', '.gitattributes')
     board(alice, 'commit', '-q', '-m', 'drop the attributes')
@@ -845,6 +979,11 @@ test('index.json merge driver: different fields merge, the same field changed tw
   const r = driver(base, ours, theirs)
   assert.equal(r.status, 1)
   has(r.stderr, 'both sides changed node a.maturity')
+  // two renames on two clones: both aliases kept
+  ours = file('ours', { project: 'P', aliases: { a: 'a2' }, nodes: [], connections: [] })
+  theirs = file('theirs', { project: 'P', aliases: { b: 'b2' }, nodes: [], connections: [] })
+  assert.equal(driver(file('base', { project: 'P', nodes: [], connections: [] }), ours, theirs).status, 0)
+  assert.deepEqual(JSON.parse(fs.readFileSync(ours, 'utf8')).aliases, { a: 'a2', b: 'b2' })
 })
 
 // skills repeat these lines on purpose (see README → Development): each must exist in exactly these skills, identically
@@ -867,6 +1006,9 @@ test('shared skill lines are present and identical', () => {
     '3. `## Decision → Implications`': ['decide', 'finalize'],
     '4. Every node it depends on': ['decide', 'finalize'],
     '5. A high reversal-cost decision': ['decide', 'finalize'],
+    '6. When the node has a `_Record:` line': ['decide', 'finalize'],
+    '- To rename a node, use `arch.mjs rename-node': ['decide', 'map'],
+    '- A bare number from the user': ['status', 'finalize'],
     // the routing table: which skill a change needs
     '| What changed | Run |': ['decide', 'status'],
     '| The chosen approach of a node': ['decide', 'status'],

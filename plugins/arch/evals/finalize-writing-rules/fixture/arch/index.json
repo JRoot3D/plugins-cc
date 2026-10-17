@@ -1,0 +1,15 @@
+{
+  "project": "Clinic",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "tooling",
+      "name": "Tooling",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/tooling.md",
+      "summary": "pnpm workspace, one CI workflow."
+    }
+  ],
+  "connections": []
+}

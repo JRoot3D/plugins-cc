@@ -2,6 +2,24 @@
 
 Newest first. Each version says what it changes, then what that means for a board that already exists: plan an upgrade from "What changes for an existing board" alone.
 
+## 4.3.0 — 2026-10-17
+
+### Changes
+
+- `arch.mjs rename-node OLD NEW` gives a live node a new slug: it moves the node file (and its `_Slug:` line), repoints the connections, and records `aliases: {OLD: NEW}` in `index.json`, so the node keeps its revision and the briefs that name OLD keep counting it. `/arch:map` has a rename flow; decide and map never rename through add-node + archive + rename again.
+- A decision can name its record: `_Record: docs/adr/0004-auth.md @ 2026-10-13_` under `_Decided:_`. `summary` prints `RECORDS_PENDING (on origin/main) …` for each decided or ready node whose record is missing on the remote's default branch, or older there than its date. Such a node stays `decided` (readiness criterion 6), and finalize writes no brief for it.
+- A `done` stage whose brief promised a capability that has no `openspec/specs/[id]/spec.md` in the working tree or on any branch of the remote ends `— capability missing: [id]`. The state stays `done`; `/arch:finalize` corrects the brief's `- Capabilities:` line or follows the stage up, and `/arch:audit` reports it.
+- `project-context.md` can list `## Task plans`: finalize checks each proposed stage against the task dependencies and scope, and audit reports briefs that drifted (`/arch:finalize revise NN`). It can also hold `## Writing rules`, which finalize follows and lints.
+- Explore records implementation and spike results on a decided or ready node (`Implementation results` in Notes, or the Assumptions row) without changing its maturity. New briefs say where `/opsx:explore` answers go. Status writes stage numbers as "stage NN" and asks when a bare number could mean a stage or a task.
+
+### What changes for an existing board
+
+- Files rewritten: none by itself. `rename-node` writes one node file and `index.json`, only when someone runs it.
+- New optional fields: `aliases` in `index.json` (written only by `rename-node`); `_Record:` in a node's `## Decision`; `## Task plans` and `## Writing rules` in `project-context.md`. Older versions keep `aliases` on every write and merge it key by key, and read the other three as text.
+- Output: a `done` stage line can end `— capability missing: …` — on a board where a brief names a capability that never got a spec, it shows right after the upgrade. `RECORDS_PENDING` appears only once a node has a `_Record:` line. `--help` lists `rename-node`. No other `summary` line changes.
+- Manual steps: none. To track decision records on a board that already has them, add `_Record: [path]_` lines without `@ date` to the decided nodes in one run and log it without `--node`, so no brief goes outdated.
+- Mixed versions: run `rename-node` only once every clone runs 4.3 or later. An older clone counts the renamed node from zero, shows the briefs that name OLD as outdated (OLD archived) and lists NEW as ready but not in a brief, so its finalize would offer a supersede. An older decide can still mark a node `ready` before its record merges; a 4.3 clone keeps listing it under `RECORDS_PENDING`.
+
 ## 4.2.0 — 2026-10-17
 
 ### Changes

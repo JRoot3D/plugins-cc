@@ -24,6 +24,8 @@ Write (exit 1 with ERROR: on bad input, nothing written; one writer at a time th
                                              for dependency, FROM must be decided before TO
   disconnect FROM TO [TYPE]                  remove matching connections
   rename OLD NEW                             repoint connections from OLD to NEW (merge/split), drop self-links and duplicates
+  rename-node OLD NEW                        give live node OLD the slug NEW: its file, connections and revision move,
+                                             and briefs that name OLD keep counting it (aliases {OLD: NEW})
   log SKILL SUMMARY [--node SLUG]... [--full]   append a line to sessions.jsonl; --full marks a whole-graph map
 Shared board (git; every command a no-op that says so while the board is not shared):
   share [BRANCH]                             give the board its own branch (default arch) with .arch/ as its worktree,
@@ -42,7 +44,8 @@ Git and hooks (no index needed):
   can-edit FILE                              exit 1 when a lock keeps you from editing FILE (a hook's guard)
   merge-index BASE OURS THEIRS               git merge driver for index.json: nodes by slug, connections by ends and type
 
-index.json: {project, created, nodes: [{slug, name, priority, maturity, file, summary}], connections: [{from, to, type, note}]}
+index.json: {project, created, nodes: [{slug, name, priority, maturity, file, summary}], connections: [{from, to, type, note}],
+  aliases?: {old slug: current slug}}
 sessions.jsonl: one {date, skill, node (slug or list)?, scope?, revision?, seen?, summary} per line, append-only;
   .arch/.gitattributes merges it with merge=union, so two clones that both logged merge without a conflict.
   Sessions an index.json from before 4.0 holds stay there and come first.
@@ -83,6 +86,7 @@ const ARGS = {
   connect: 'FROM TO TYPE NOTE',
   disconnect: 'FROM TO [TYPE]',
   rename: 'OLD NEW',
+  'rename-node': 'OLD NEW',
   log: 'SKILL SUMMARY [--node SLUG]... [--full]',
   share: '[BRANCH]',
   claim: 'KEY...',
@@ -148,6 +152,10 @@ const write = (file, text) => {
 
 // Sessions an index.json from before 4.0 holds: they stay there, new ones go to sessions.jsonl.
 let legacySessions = []
+// index.json aliases: a renamed node's old slug -> its current one, so sessions and briefs that name it still count
+let aliases = {}
+let liveSlugs = new Set()
+const canonical = slug => (Object.hasOwn(aliases, slug) && !liveSlugs.has(slug) ? aliases[slug] : slug)
 
 // last_updated (before 4.0) changed with every write, so two clones always conflicted on it: dropped
 const saveIndex = ({ sessions, last_updated, ...data }) =>
@@ -597,7 +605,7 @@ const history = file =>
 const slugsOf = session => (Array.isArray(session.node) ? session.node : session.node ? [session.node] : [])
 
 // Nodes a session changed. finalize only names the nodes its briefs cover.
-const changedBy = session => (session.skill === 'finalize' ? [] : slugsOf(session))
+const changedBy = session => (session.skill === 'finalize' ? [] : slugsOf(session).map(canonical))
 
 // slug -> number of sessions that changed it (the node's revision)
 const revs = sessions => {
@@ -665,11 +673,14 @@ const briefs = () =>
     return [name, Object.fromEntries(found.map(m => [m[1], m[2]]))]
   })
 
-const briefSlugs = meta =>
-  (meta['Arch nodes covered'] ?? '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
+const briefSlugs = meta => [
+  ...new Set(
+    (meta['Arch nodes covered'] ?? '')
+      .split(',')
+      .map(s => canonical(s.trim()))
+      .filter(Boolean),
+  ),
+]
 
 // Change names on the first '- Changes:' line of a brief's ## OpenSpec Handoff (backticks and notes dropped).
 const briefChanges = name => {
@@ -681,6 +692,17 @@ const briefChanges = name => {
     .map(item => CHANGE_NAME.exec(item.trim()))
     .filter(Boolean)
     .map(m => m[1])
+}
+
+// Capability ids on the first '- Capabilities:' line of a brief's ## OpenSpec Handoff: per '·' part, the backticked
+// ids after its first New: or Modified: (a part like 'none — skip_specs: true' has none).
+const briefCapabilities = name => {
+  const handoff = sections(read(`${ARCH}/feature-briefs/${name}`)).get('OpenSpec Handoff') ?? []
+  const line = handoff.find(l => l.startsWith('- Capabilities:')) ?? ''
+  return line.split('·').flatMap(part => {
+    const at = part.search(/New:|Modified:/)
+    return at < 0 ? [] : [...part.slice(at).matchAll(/`([^`]+)`/g)].map(m => m[1].trim())
+  })
 }
 
 // Sorted directory names, hidden ones skipped like OpenSpec does.
@@ -723,15 +745,19 @@ const changesIn = (where, dirs, readFile) => {
 // On a shared board the code lives on many branches: openspec/changes/ on every branch of the remote counts too,
 // open pull requests included, so the stages read the same whichever branch this checkout is on. The remote's
 // default branch comes first; branches with the same changes tree are read once.
-const remoteChanges = () => {
+// the code's branches on the remote: every remote-tracking branch but HEAD and the board's
+const remoteRefs = () => {
   if (!shared()) return []
   const prefix = `refs/remotes/${remote()}/`
-  const head = git(['symbolic-ref', '-q', `${prefix}HEAD`]).out
   const board = `${prefix}${boardBranch()}`
-  const refs = git(['for-each-ref', '--format=%(refname)', prefix])
+  return git(['for-each-ref', '--format=%(refname)', prefix])
     .out.split('\n')
     .filter(r => r && r !== `${prefix}HEAD` && r !== board)
-    .sort((a, b) => (b === head) - (a === head))
+}
+
+const remoteChanges = () => {
+  const head = git(['symbolic-ref', '-q', `refs/remotes/${remote()}/HEAD`]).out
+  const refs = remoteRefs().sort((a, b) => (b === head) - (a === head))
   if (!refs.length) return []
   const trees = git(['cat-file', '--batch-check'], refs.map(r => `${r}:${CHANGES}\n`).join('')).out.split('\n')
   const seen = new Map()
@@ -758,6 +784,19 @@ const remoteChanges = () => {
 // STAGES and CHANGES_NOT_IN_A_BRIEF lines: what openspec/changes/ holds for each brief's changes.
 const implementation = written => {
   const isDir = dir => stat(dir)?.isDirectory() ?? false
+  // capability ids with a spec.md in the working tree or on any branch of the remote: one git call, on first use
+  let found = null
+  const specs = () => {
+    if (found) return found
+    const ids = [...new Set(written.flatMap(([name]) => briefCapabilities(name)))]
+    found = new Set(ids.filter(id => stat(`openspec/specs/${id}/spec.md`)?.isFile()))
+    const asks = remoteRefs().flatMap(ref => ids.filter(id => !found.has(id)).map(id => [id, `${ref}:openspec/specs/${id}/spec.md`]))
+    if (asks.length) {
+      const out = git(['cat-file', '--batch-check'], asks.map(([, object]) => `${object}\n`).join('')).out.split('\n')
+      asks.forEach(([id], i) => / blob \d+$/.test(out[i] ?? '') && found.add(id))
+    }
+    return found
+  }
   const sources = [changesIn(null, subdirs, read), ...remoteChanges()]
   const anywhere = isDir(CHANGES) || sources.length > 1
   // Within one place an active change wins over an archived one of the same name; across places, archived anywhere
@@ -809,7 +848,9 @@ const implementation = written => {
         : !kinds.has('archived') && !done
           ? 'planned'
           : 'in progress'
-    out.push(`  ${name} — ${state}: ${parts.join('; ')}`)
+    // done, but a capability the brief promised exists on no branch: the state stays done, the line says so
+    const missing = state === 'done' ? briefCapabilities(name).filter(id => !specs().has(id)) : []
+    out.push(`  ${name} — ${state}: ${parts.join('; ')}${missing.length ? ` — capability missing: ${missing.join(', ')}` : ''}`)
   }
   if (anywhere) {
     // a brief's own changes, and the ones it lists as related (_Related changes: a, b_): they refer to it, not built by it
@@ -843,6 +884,29 @@ const implementation = written => {
     }
   }
   return out
+}
+
+// Connections of OLD now end at NEW; self-links and duplicates are dropped. Returns the ends it moved.
+const repoint = (data, oldSlug, newSlug) => {
+  const out = []
+  const seen = new Set()
+  let moved = 0
+  for (const conn of data.connections) {
+    const c = { ...conn }
+    for (const end of ['from', 'to']) {
+      if (c[end] === oldSlug) {
+        c[end] = newSlug
+        moved++
+      }
+    }
+    const key = JSON.stringify([c.from, c.to, c.type])
+    if (c.from !== c.to && !seen.has(key)) {
+      seen.add(key)
+      out.push(c)
+    }
+  }
+  data.connections = out
+  return moved
 }
 
 const findNode = (data, slug) => data.nodes.find(n => n.slug === slug) ?? fail(`no live node ${q(slug)} in index.json`)
@@ -957,7 +1021,10 @@ const summary = data => {
   if (last >= 0) {
     const map = sessions[last]
     // a map logged before 4.0 saw every session before it
-    const seen = map.seen ?? Object.fromEntries(revs(sessions.slice(0, last + 1)))
+    // a renamed node's count adds up under its current slug
+    const seen = {}
+    for (const [slug, n] of Object.entries(map.seen ?? Object.fromEntries(revs(sessions.slice(0, last + 1)))))
+      seen[canonical(slug)] = (seen[canonical(slug)] ?? 0) + n
     const at = map.revision ?? last + 1
     const changed = [...rev]
       .filter(([slug, n]) => n > (seen[slug] ?? 0) && hist.has(slug))
@@ -980,15 +1047,13 @@ const summary = data => {
       const followed = meta['Follows up'] ?? ''
       handedOn.set(followed, new Set([...(handedOn.get(followed) ?? []), ...briefSlugs(meta)]))
     }
-    // slug=N, slug=N -> Map
-    const pairs = text =>
-      new Map(
-        text
-          .split(',')
-          .map(pair => pair.split('=').map(s => s.trim()))
-          .filter(([slug]) => slug)
-          .map(([slug, n]) => [slug, Number(n) || 0]),
-      )
+    // slug=N, slug=N -> Map; an old slug of a renamed node adds up under its current one
+    const pairs = text => {
+      const out = new Map()
+      for (const [slug, n] of text.split(',').map(pair => pair.split('=').map(s => s.trim())))
+        if (slug) out.set(canonical(slug), (out.get(canonical(slug)) ?? 0) + (Number(n) || 0))
+      return out
+    }
     // a node archived, or changed by sessions past the revision the brief recorded for it
     const reason = (slug, at) => {
       if (!hist.has(slug)) return `${slug} archived`
@@ -1024,6 +1089,11 @@ const summary = data => {
   }
   const uncovered = nodes.filter(n => n.maturity === 'ready' && !covered.has(n.slug)).map(n => n.slug)
   out.push(`READY_NOT_IN_A_BRIEF ${uncovered.join(', ') || 'none'}`)
+  const withRecords = nodes
+    .filter(n => ['decided', 'ready'].includes(n.maturity))
+    .map(n => [n.slug, records(read(nodePath(n)))])
+    .filter(([, r]) => r)
+  if (withRecords.length) out.push(recordsPending(withRecords))
   if (written.length) out.push(...implementation(written))
 
   if (sessions.length) {
@@ -1056,6 +1126,35 @@ const setSection = (file, title, value) => {
   if (j < body.length && !body[j].startsWith('#')) body[j] = value
   else body.splice(i + 1, 0, value)
   write(file, body.join(text.includes('\r\n') ? '\r\n' : '\n'))
+}
+
+// _Record: docs/adr/0001-x.md @ 2026-10-05, docs/adr/0002-y.md_ in a node's ## Decision: [{path, date}], or null
+const records = text => {
+  const m = (sections(text).get('Decision') ?? []).map(l => /^_Record:\s*(.*?)_\s*$/.exec(l.trim())).find(Boolean)
+  if (!m) return null
+  return m[1]
+    .split(',')
+    .map(part => part.split('@').map(x => x.trim()))
+    .filter(([file]) => file)
+    .map(([file, date]) => ({ file, date: date || null }))
+}
+
+// RECORDS_PENDING: a decision is real once its record is on the default branch — with @ DATE, changed there on or after it.
+const recordsPending = list => {
+  if (!git(['rev-parse', '--git-dir']).ok) return 'RECORDS_PENDING unknown — not a git repository'
+  const head = `refs/remotes/${remote()}/HEAD`
+  const ref = git(['rev-parse', '-q', '--verify', head]).ok ? git(['symbolic-ref', '-q', '--short', head]).out || head : 'HEAD'
+  // ponytail: day granularity — a record committed earlier on the @ day hides the pending state; compare with the time
+  // of the board commit that added the _Record: line (git -C .arch log -S) if that matters
+  const pending = list.flatMap(([slug, recs]) => {
+    const why = recs.flatMap(({ file, date }) => {
+      const last = git(['log', '-1', '--first-parent', '--format=%cs', ref, '--', file]).out
+      if (!last) return [`${file} missing`]
+      return date && last < date ? [`${file} ${last} < ${date}`] : []
+    })
+    return why.length ? [`${slug} (${why.join(', ')})`] : []
+  })
+  return `RECORDS_PENDING (on ${ref}) ${pending.join(', ') || 'none'}`
 }
 
 // Opens a file with the system's default app, without waiting for it.
@@ -1116,6 +1215,7 @@ const COMMANDS = {
     if (!SLUG.test(slug)) fail('slug must be lowercase words joined by hyphens, e.g. tech-stack')
     if (!PRIORITY.includes(priority)) fail(`priority must be one of ${PRIORITY.join(', ')}`)
     if (data.nodes.some(n => n.slug === slug)) fail(`node ${q(slug)} already exists`)
+    if (Object.hasOwn(aliases, slug)) fail(`${slug} is the old slug of ${aliases[slug]} — its sessions count for that node; pick another slug`)
     requireLock(slug)
     const rel = `ideas/${slug}.md`
     if (read(`${ARCH}/${rel}`) === null) fail(`write ${ARCH}/${rel} first`)
@@ -1179,26 +1279,47 @@ const COMMANDS = {
 
   rename(data, [oldSlug, newSlug]) {
     findNode(data, newSlug)
-    const out = []
-    const seen = new Set()
-    let moved = 0
-    for (const conn of data.connections) {
-      const c = { ...conn }
-      for (const end of ['from', 'to']) {
-        if (c[end] === oldSlug) {
-          c[end] = newSlug
-          moved++
-        }
-      }
-      const key = JSON.stringify([c.from, c.to, c.type])
-      if (c.from !== c.to && !seen.has(key)) {
-        seen.add(key)
-        out.push(c)
-      }
-    }
-    data.connections = out
+    const moved = repoint(data, oldSlug, newSlug)
     saveIndex(data)
-    return `OK repointed ${moved} connection end(s) from ${oldSlug} to ${newSlug}; ${out.length} connection(s) remain`
+    return `OK repointed ${moved} connection end(s) from ${oldSlug} to ${newSlug}; ${data.connections.length} connection(s) remain`
+  },
+
+  'rename-node'(data, [oldSlug, newSlug]) {
+    const node = findNode(data, oldSlug)
+    if (!SLUG.test(newSlug)) fail('NEW must be lowercase words joined by hyphens, e.g. tech-stack')
+    if (data.nodes.some(n => n.slug === newSlug)) fail(`node ${q(newSlug)} already exists`)
+    const taken = mdFiles(`${ARCH}/ideas`).find(f => f === `${newSlug}.md` || new RegExp(`^${escapeRe(newSlug)}(-\\d+)?\\.archived\\.md$`).test(f))
+    if (taken) fail(`ideas/${taken} exists — pick another slug`)
+    if (Object.hasOwn(aliases, newSlug)) fail(`${newSlug} is the old slug of ${aliases[newSlug]} — pick another slug`)
+    // two histories never merge: a slug that sessions name already has a revision of its own
+    if (data.sessions.some(s => slugsOf(s).includes(newSlug))) fail(`sessions.jsonl already names ${newSlug} — pick another slug`)
+    requireLock(oldSlug)
+    requireLock(newSlug)
+    const src = nodePath(node)
+    const text = read(src) ?? fail(`node file missing: ${src}`)
+    const dst = `${ARCH}/ideas/${newSlug}.md`
+    write(dst, text.replace(new RegExp(`^_Slug: ${escapeRe(oldSlug)}_`, 'm'), `_Slug: ${newSlug}_`))
+    fs.rmSync(src)
+    Object.assign(node, { slug: newSlug, file: `ideas/${newSlug}.md` })
+    repoint(data, oldSlug, newSlug)
+    // one lookup always resolves: older names of OLD point to NEW too
+    data.aliases = { ...Object.fromEntries(Object.entries(aliases).map(([k, v]) => [k, v === oldSlug ? newSlug : v])), [oldSlug]: newSlug }
+    saveIndex(data)
+    // the slug as a word of its own: a header like _Arch nodes covered: OLD_ ends in _
+    const mention = new RegExp(`(?<![A-Za-z0-9-])${escapeRe(oldSlug)}(?![A-Za-z0-9-])`)
+    const still = [
+      ...data.nodes
+        .filter(n => n.slug !== newSlug && mention.test((sections(read(nodePath(n))).get('Connections') ?? []).join('\n')))
+        .map(n => n.file),
+      ...mdFiles(`${ARCH}/feature-briefs`)
+        .filter(f => mention.test(read(`${ARCH}/feature-briefs/${f}`) ?? ''))
+        .map(f => `feature-briefs/${f}`),
+    ]
+    return (
+      `OK renamed ${oldSlug} -> ${newSlug}` +
+      (still.length ? ` — these still name ${oldSlug}: ${still.join(', ')}` : '') +
+      (shared() ? ` — a clone on arch before 4.3 shows the briefs that name ${oldSlug} as outdated` : '')
+    )
   },
 
   log(data, [skill, summary], { node = [], full = false }) {
@@ -1334,6 +1455,8 @@ const load = () => {
   }
   if (!invalid && isObject(data) && Array.isArray(data.sessions ?? [])) {
     legacySessions = data.sessions ?? []
+    aliases = isObject(data.aliases) ? data.aliases : {}
+    liveSlugs = new Set((Array.isArray(data.nodes) ? data.nodes : []).map(n => n?.slug))
     data.sessions = [...legacySessions, ...logged]
   }
   if (!invalid && schemaError(data)) invalid = `${INDEX}: ${schemaError(data)}`

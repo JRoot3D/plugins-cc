@@ -250,6 +250,7 @@ Only when `STAGES` lists a stage `planned`, `in progress` or `done`, or `CHANGES
 - **Changes from a brief** — every proposed or archived change of those stages (`N/M tasks`, `proposed (no tasks yet)` or `archived [date]` in its `STAGES` line). Compare its `design.md` → Decisions and Non-Goals with its own brief's `## Key Decisions Already Made` and `## Out of Scope` — the snapshot arch handed over, not the nodes' current decisions (changes since the brief are `BRIEFS_OUTDATED`, reported in Step 3). A design that matches a follow-up brief (down its brief's `_Followed up by:_` chain) that its proposal names is not drift. A change with no task done whose brief is followed up but whose proposal does not name the follow-up brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[follow-up brief]`; one with tasks done finishes on its own brief's decisions. A change with no task done of a stage whose brief has `_Supersedes:_`, whose proposal names only the superseded brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[brief]`.
   - A contradiction is 🔴. Remedy by the change's own `STAGES` entry: `proposed (no tasks yet)` or `0/M tasks` → revise it with `/opsx:update [change] @.arch/feature-briefs/[brief]`; tasks done or `archived` → `/arch:decide [node]` (the covered node the Key Decision came from) to record what was built, then `/arch:finalize` follows the brief up.
   - No `design.md` → compare with `proposal.md` instead. An active change also gets 🟡 "Key Decisions not carried into design.md" → `/opsx:continue [change]` (expanded profile — `openspec config profile`) or have the agent follow `openspec instructions design --change [change]`, then `/opsx:update [change] @.arch/feature-briefs/[brief]` if tasks.md must follow. An archived one does not.
+- **Capabilities never created** — a `done` `STAGES` line that ends `— capability missing: [id]` → 🟡 "stage NN is done, but [id] has no spec" → `/arch:finalize` (Capabilities line corrections).
 - **Changes not from a brief** (`CHANGES_NOT_IN_A_BRIEF`) — `summary` already read their proposals. A `[change] names [brief]` line: the change was renamed during propose → 🟡, `/arch:finalize` corrects that brief's `- Changes:` line; if that brief is marked `_Superseded by:_`, the change was proposed from a retired brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[the brief its _Superseded by:_ names]` (no task done) and `/arch:finalize` puts the name on that brief's Changes line. If the change only refers to the brief, `/arch:finalize` lists it under the brief's `_Related changes:_`. The changes on the `others:` line name no brief: read their `proposal.md` only in a full review or `/arch:audit openspec`, for this check — one that touches a node's area → 🟡 "decided outside arch" → `/arch:decide [node]`. Otherwise it is unrelated — leave it out.
 
 **Output format:**
@@ -270,6 +271,15 @@ Only when `STAGES` lists a stage `planned`, `in progress` or `done`, or `CHANGES
     • cache-layer — adds a Redis cache, the area of "data-model": decided outside arch → /arch:decide data-model
 
   ✅ Match their briefs: setup-project, auth-ui
+```
+
+### Step 9b — Briefs vs Task Plans
+
+Only when briefs exist and `project-context.md` has a `## Task plans` section — also when Step 9 skips. Read the files it lists. For each stage that is not `done` in `STAGES`: each task it implements depends only on tasks in the same stage, in a stage it requires (directly or through other stages), or done; each item of its What Needs to Be Built is in the plan scope of a task it names. A missing Requires, a cycle between stages, or scope the plan gives to another task → 🟡 with the task ids → `/arch:finalize revise NN`.
+
+```
+🗂️  BRIEFS VS TASK PLANS
+  🟡 stage 02 builds T-5's export, but the plan gives it to T-7 (stage 04) → /arch:finalize revise 02
 ```
 
 ### Step 10 — Summary & Recommendations
@@ -323,7 +333,7 @@ Run only Step 2 (Missing Concerns) in full depth. Useful early in the process wh
 make sure you haven't missed major architectural areas.
 
 **`/arch:audit openspec`**
-Run only Step 9 (OpenSpec Drift). If its condition is false, say why in one line: no feature briefs yet, no `openspec/` directory, or no change proposed from a brief (stages `not started` or `unknown`) and none outside them.
+Run only Step 9 (OpenSpec Drift) and Step 9b (Briefs vs Task Plans). If its condition is false, say why in one line: no feature briefs yet, no `openspec/` directory, or no change proposed from a brief (stages `not started` or `unknown`) and none outside them.
 
 ---
 

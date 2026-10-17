@@ -75,6 +75,7 @@ Before proceeding, verify:
    - New stages group only `READY_NOT_IN_A_BRIEF` nodes (plus the nodes of briefs superseded below), are numbered after the highest existing `NN`, and use slugs that differ from existing ones.
    - **Changes line corrections** — handle these before the choices below; they touch no decisions, so they also run while the gate is closed. After the user confirms a correction, rewrite that brief's `- Changes:` line, then run `arch.mjs summary` again and use its `STAGES` below.
      - `CHANGES_NOT_IN_A_BRIEF` already read the proposals: act only on its `[change] names [brief]` lines, never on the `others:` line. For each, read that change's `proposal.md` (`openspec/changes/[change]/`, or `openspec/changes/archive/[date]-[change]/` when archived), show the brief's `- Changes:` line and ask: is the change one of the listed changes proposed under another name, or were listed changes merged, split or dropped? Then correct the `- Changes:` line. If it is none of these (the change only refers to the brief), add its name to the brief's `_Related changes:_` header line (create the line after the last header line when it is missing) after the user confirms, so it leaves the list. If the brief it names is marked `_Superseded by:_`, use the brief that mark points to instead, and tell the user to revise the change from it (`/opsx:update [change] @.arch/feature-briefs/[that brief]`) unless it already has tasks done.
+     - **Capabilities line corrections** (also while the gate is closed): for each `STAGES` line that ends `— capability missing: [id]`, list the spec ids the stage's archived changes created (`openspec/changes/archive/[date]-[change]/specs/`) and ask which holds: the capability exists under another id → correct the brief's `- Capabilities:` line; its scope moved to other tasks → Follow up with the new changes (needs the open gate); it was dropped → remove the id from the line after the user confirms.
      - For each `STAGES` line where a `not proposed` change sits next to a sibling that is archived or has tasks done, ask whether that change is still planned, merged into another change, or dropped; remove it from `- Changes:` only after the user confirms it was merged or dropped.
    - For each brief in `BRIEFS_OUTDATED`, and each brief the user named (`revise NN`), show what changed since its `_Arch revision:_` and `_Arch context:_` (the listed nodes' History lines and current decisions, a superseded stage it requires, or the plan change the user named) and its `STAGES` state, and ask the user to choose between the options that state allows. Amend runs while the gate is closed too; Supersede and Follow up need the open gate — while it is closed, write nothing else for a named brief.
 
@@ -90,7 +91,7 @@ Before proceeding, verify:
      - **Follow up**: write a brief for the delta only (what changes relative to the implemented stage) that depends on the old stage, with `_Follows up: [old file]_` in its header; in the old brief's header, add `_Followed up by: [new file] ([date])_`, remove archived slugs from `_Arch nodes covered:_` (also in the briefs it follows up), and set `_Arch revision:_` to the current revisions of the nodes it still covers. A change of the old stage that already has tasks done finishes on the old brief's decisions. For each one with no task done in `STAGES` (`not proposed`, `proposed (no tasks yet)`, `0/M tasks`), the follow-up brief's `## OpenSpec Handoff` says it takes the follow-up brief too: not proposed or `proposed (no tasks yet)` → `/opsx:propose [change] @.arch/feature-briefs/[old brief] @.arch/feature-briefs/[follow-up brief]` (it continues an existing change); `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[follow-up brief]` before `/opsx:apply`.
      - **Keep** — the change does not affect the brief (never when a covered node was archived): set the old brief's `_Arch revision:_` to the current revisions of its nodes.
      - Keep, Follow up and Amend also set `_Arch context:_` to the current revisions: an archived context slug becomes the node that replaced it, or is dropped. For a brief with a `requires [old] (superseded by [new])` reason, every option, Keep included, repoints that `- Requires:` entry and the todo-list row's Depends On cell to the new stage.
-   - These are the only edits ever made to existing briefs and todo-list rows: the header marks above (`_Superseded by:_`, `_Followed up by:_`, `_Amended:_`, `_Arch revision:_` and `_Arch context:_` bumps, archived-slug removal from `_Arch nodes covered:_`, `_Related changes:_`), an Amend's body edits, a `- Changes:` line corrected under **Changes line corrections**, `- Requires:` and Depends On repoints to a superseding stage, the todo-list Notes fixes the user confirmed, the superseded mark on a todo-list row, and the one-time 3.1 legend update of a pre-3.1 todo list (Step 3). A new header line goes right after the last existing one, so it stays within the first 15 lines that `arch.mjs` reads.
+   - These are the only edits ever made to existing briefs and todo-list rows: the header marks above (`_Superseded by:_`, `_Followed up by:_`, `_Amended:_`, `_Arch revision:_` and `_Arch context:_` bumps, archived-slug removal from `_Arch nodes covered:_`, `_Related changes:_`), an Amend's body edits, a `- Changes:` or `- Capabilities:` line corrected under **Changes line corrections** or **Capabilities line corrections**, `- Requires:` and Depends On repoints to a superseding stage, the todo-list Notes fixes the user confirmed, the superseded mark on a todo-list row, and the one-time 3.1 legend update of a pre-3.1 todo list (Step 3). A new header line goes right after the last existing one, so it stays within the first 15 lines that `arch.mjs` reads.
 
 ## Current State
 Generated from `.arch/` by the plugin's state script when this skill started:
@@ -101,7 +102,7 @@ Generated from `.arch/` by the plugin's state script when this skill started:
 - `INDEX_INVALID` → stop and show the user the error: `.arch/index.json` must be repaired before architector can continue.
 - Otherwise take counts, stage, finalize gate, map and brief freshness, last node worked on, LOCKS and PROBLEMS from this block instead of recomputing them. Still read node files for their content. Mention any PROBLEMS to the user.
 
-**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write: fix the bookkeeping it reports in the nodes this run changed (a copy that differs, a missing `## Connections` line, an unknown slug) and run it again until only problems that need a decision remain — an unresolved conflict, a `ready` node that depends on a less mature one, a dependency cycle; never change maturity, priority or connections to clear those, name them to the user. Name bookkeeping problems in other nodes without fixing them: another session may be midway through a merge, a split or new nodes. Never edit `index.json` or `sessions.jsonl` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
+**Writing `index.json`:** change it only with `node "${CLAUDE_PLUGIN_ROOT}/scripts/arch.mjs" <command>` — one command per Bash or PowerShell call, exactly in that form (no `cd`, variables or `&&` chains); below, `arch.mjs …` is short for it. `set` also updates `## Maturity` / `## Priority` in the node file, and refuses `decided` / `ready` until the node file has a `## Decision` section. Commands: `set SLUG maturity|priority|name|summary VALUE`, `add-node SLUG NAME PRIORITY SUMMARY`, `archive SLUG`, `connect FROM TO TYPE NOTE` (for `dependency`, FROM must be decided before TO), `disconnect FROM TO [TYPE]`, `rename OLD NEW`, `rename-node OLD NEW` (a live node's new slug: file, connections, revision and brief coverage move with it), `log SKILL SUMMARY [--node SLUG]... [--full]`, `init PROJECT`, `check`. Run `check` after your last write: fix the bookkeeping it reports in the nodes this run changed (a copy that differs, a missing `## Connections` line, an unknown slug) and run it again until only problems that need a decision remain — an unresolved conflict, a `ready` node that depends on a less mature one, a dependency cycle; never change maturity, priority or connections to clear those, name them to the user. Name bookkeeping problems in other nodes without fixing them: another session may be midway through a merge, a split or new nodes. Never edit `index.json` or `sessions.jsonl` directly. If a command prints `ERROR:`, fix the arguments and run it again. Claude Code may ask the user to approve these calls; if the user declines one, stop and tell them which change was not recorded.
 
 **Shared board** (Current State has a `LOCKS shared via` block): other people change this board from their own clones, a node each. `.arch/` is a worktree of the board's own branch (named in that block): never commit it, put it on another branch or open a pull request for it yourself, whatever this project's rules say for code — claim and release pull and push it. As soon as you start working on a node, and before you write any of its files, `arch.mjs claim SLUG...` every node you will change — a new node's slug before you write its file, `#briefs` for feature briefs and the todo list, `#context` for `project-context.md`. Claim first pulls the board branch, so you work on what the others released. If claim says another person holds one, tell the user who and since when and leave that node alone; if a pull fails, show the user its error. `set`, `add-node` and `archive` refuse a node you do not hold. When the run is done — after your last `check`, or when it wrote nothing — `arch.mjs release`: it commits `.arch/` on the board branch, pulls, pushes and frees your locks; if it fails, show the user its error and that `/arch-release` retries it once the cause is fixed — your locks stay until it succeeds. Run `arch.mjs unlock KEY --force` only when the user says another person's lock is abandoned.
 
@@ -117,28 +118,29 @@ Consider:
 - Nodes that share the same underlying concern (from /arch:map analysis)
 - Logical build order (foundation before features)
 - User hints in node files (e.g. "might merge with X")
+- The task plans, when `project-context.md` has a `## Task plans` section: read the files it lists. For each task a proposed stage implements, every task it depends on is in the same stage, in a stage it requires (directly or through other stages), or done (an archived change). Each item of What Needs to Be Built is in the plan scope of a task the stage names. Name each violation in the proposal below, before the user confirms: a missing Requires, a cycle, or scope outside the task
 
 Present the proposed grouping:
 
 ```
 Proposed implementation stages:
 
-Stage 01 — Foundation
+stage 01 — Foundation
   Covers: tech-stack, data-model, project-setup
   Why first: everything else depends on these decisions
 
-Stage 02 — Core Auth
+stage 02 — Core Auth
   Covers: auth
-  Depends on: Stage 01
+  Depends on: stage 01
 
-Stage 03 — Canvas & Node Graph
+stage 03 — Canvas & Node Graph
   Covers: canvas-ui, node-graph
   Why grouped: share the same rendering surface (noted in /arch:map)
-  Depends on: Stage 01
+  Depends on: stage 01
 
-Stage 04 — Export
+stage 04 — Export
   Covers: export
-  Depends on: Stage 03
+  Depends on: stage 03
 
 Out of scope for now (deferred/not-ready):
   - analytics (deferred)
@@ -157,6 +159,7 @@ The brief is the input for `/opsx:propose`, so its sections map onto the change'
 
 Before writing:
 - If `openspec/specs/` exists, list the existing capability ids: every directory under `openspec/specs/` that holds a `spec.md`; the id is its path relative to `specs/` (e.g. `identity/user-auth`). The Handoff's Capabilities line marks these as Modified.
+- When `project-context.md` has a `## Writing rules` section, follow it in each brief and todo-list edit. Run the lint it names on each brief you wrote or amended, and fix its hard findings in the prose.
 - Fill `_Arch context:_` with every node the brief's text relies on without covering it — a decision it cites, a node it names — at its `rev=` in Current State `NODES`. Leave the line out when there is none.
 - Change names in a new brief must not appear on another non-superseded brief's `- Changes:` line, as a directory under `openspec/changes/`, or as `[date]-[name]` under `openspec/changes/archive/` — except in the replacement for a `planned` stage (Gate Check 5), which keeps the old names.
 
@@ -272,6 +275,7 @@ _Arch context: [each node the text relies on that it does not cover — a decisi
 - Changes: [kebab-case change names in order, comma-separated names only, no notes; not starting with a date (OpenSpec archives such names without a date prefix) — one per coherent behaviour change, usually one; split when the stage holds independent capabilities. /arch:status tracks them by these exact names]
 - Start with: [`/opsx:explore` while a marked open question remains · otherwise `/opsx:propose [change] @[this brief]`]
 - Capabilities: [per change — New: `capability-id` · Modified: `existing-id` (in openspec/specs/, or New in an earlier stage) · or `none — skip_specs: true` when it only sets up tooling, infrastructure or docs]
+- Open questions: answers that `/opsx:explore` finds go into the change's `design.md → Decisions` — run `/opsx:propose` in the same session, so they are written down. An answer that changes a node's facts also goes to `/arch:explore [node]`.
 - Key Decisions are settled: carry them into `design.md → Decisions` with their alternatives, Out of Scope into Non-Goals, Assumptions to Validate into the first tasks. To change a decision, go back to `/arch:decide`.
 ```
 
@@ -320,12 +324,13 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 3. `## Decision → Implications` states the effect on each connected node, or says there is none
 4. Every node it depends on (`dependency` connections that point to it) is `ready`, and no `conflict` connection involves it
 5. A high reversal-cost decision has no load-bearing `low`-confidence assumption unless its Confirmation tests that assumption early or its Implications name a `Boundary:` that keeps the choice replaceable
+6. When the node has a `_Record:` line, `RECORDS_PENDING` does not list it
 
 ---
 
 ## Rules
 - Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
-- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set` and `archive` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
+- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set`, `archive` and `rename-node` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
 - Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Outside `.arch/`, write only `context:`, `rules:` and `operations:` in `openspec/config.yaml` (or `config.yml`), after the user confirms
@@ -333,6 +338,7 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 - Existing briefs and todo-list rows are never rewritten — later runs append; the only edits are those listed in Gate Check 5
 - Write the briefs and the todo list yourself, in this conversation. Do not give them to subagents: they do not get this skill's template and rules
 - Do not invent stage groupings without user confirmation
+- A bare number from the user (08, 008) can mean a stage or a task ID. When both exist, ask which one
 - Feature briefs must accurately reflect decisions from node files — do not add new decisions
 - Open technical questions in briefs must be genuinely open — do not fill them with guesses
 - Implementation progress is never recorded in `.arch/` — `arch.mjs summary` reads it from `openspec/changes/`

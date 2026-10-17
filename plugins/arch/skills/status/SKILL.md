@@ -85,6 +85,7 @@ PROGRESS
 BLOCKERS ANALYSIS
   ❌ tech-stack is still raw-idea — blocking: data-model, canvas-ui, node-graph
   ⚠️  data-model has open questions — see ideas/data-model.md ## Notes
+  ⏳ record not merged: auth → merge docs/adr/0004-auth.md, then /arch:decide auth
 
 READY FOR /arch:finalize?
   ❌ No — [FINALIZE_GATE reasons: blocking nodes not ready, PROBLEMS]
@@ -92,6 +93,8 @@ READY FOR /arch:finalize?
 SUGGESTED NEXT ACTION
   → /arch:explore tech-stack   (highest priority — unblocks 3 nodes)
 ```
+
+Take the `⏳ record not merged` lines from `RECORDS_PENDING` in Current State, one per node it lists (blocking nodes first); skip them when it is absent or `none`.
 
 When the gate is open and nothing is left to brief (`READY_NOT_IN_A_BRIEF` and `BRIEFS_OUTDATED` are none), the suggested next action is the `Next` command from Step 6.
 
@@ -146,17 +149,20 @@ Only when `STAGES` is in Current State. Take each stage's state from its `STAGES
 
 ```
 IMPLEMENTATION (OpenSpec)
-  ✓ 01 Foundation   done — setup-project archived 2026-10-01
-  ▶ 02 Core Auth    in progress — add-auth 5/12 tasks; auth-ui not proposed
-  ◇ 03 Export       planned — export-csv proposed (no tasks yet)
-  ○ 04 Canvas       not started
-  ⚠️  03 is planned but depends on 02, which is not done
+  ✓ stage 01 Foundation   done — setup-project archived 2026-10-01
+  ✓ stage 02 Accounts     done, capability missing: user-auth → /arch:finalize
+  ▶ stage 03 Core Auth    in progress — add-auth 5/12 tasks; auth-ui not proposed
+  ◇ stage 04 Export       planned — export-csv proposed (no tasks yet)
+  ○ stage 05 Canvas       not started
+  ⚠️  stage 04 is planned but depends on stage 03, which is not done
   Not from a brief: 3, 1 of them names a brief
     add-login (active) names 02-auth.md — renamed during propose, or proposed from a superseded brief? /arch:finalize corrects the brief's Changes line
-  → Next: /opsx:apply add-auth   (stage 02)
+  → Next: /opsx:apply add-auth   (stage 03)
 ```
 
+- Write each stage number as "stage NN", never as a bare number.
 - `?` marks an `unknown` stage, followed by its reason from the `STAGES` line.
+- A `done` line that ends `— capability missing: [id]` → "done, capability missing: [id] → /arch:finalize" (the user types it); the stage still counts as done for `Next`.
 - Warn when a `planned`, `in progress` or `done` stage depends on a stage that is not `done` — the stages its brief's `## Dependencies → Requires` names. A Requires entry naming a superseded stage means its replacement (follow `_Superseded by:_`).
 - Before you give `Next`, route with this table, the same one `/arch:decide` uses, when the user asks whether something needs an arch skill first:
 
@@ -168,7 +174,7 @@ IMPLEMENTATION (OpenSpec)
 | A brief in `BRIEFS_OUTDATED` | `/arch:finalize` (the user types it) |
 | Nothing: you want to start or continue a stage | the `Next` command of `/arch:status`, no arch skill — a `ready` node needs no `/arch:decide` |
 
-- Next: the lowest-numbered stage that is not `done` and whose Requires stages are all `done`. Within it, take the first change in `STAGES` order that is not archived: `not proposed` → `/opsx:explore` with the brief, then `/opsx:propose [change] @.arch/feature-briefs/[brief]` if the brief's Handoff says to start with explore, otherwise just that `/opsx:propose`; `proposed (no tasks yet)` → the same `/opsx:propose` (it offers to continue the existing change); `N/M tasks` with N < M → `/opsx:apply [change]`; N = M → `/opsx:archive [change]`. If that stage is `unknown`, give its reason instead of a command; if every stage is `done`, say so. Then adjust it:
+- Next: the lowest-numbered stage that is not `done` and whose Requires stages are all `done`. Within it, take the first change in `STAGES` order that is not archived: `not proposed` → `/opsx:explore` with the brief, then `/opsx:propose [change] @.arch/feature-briefs/[brief]` in the same session (so its answers are written down) if the brief's Handoff says to start with explore, otherwise just that `/opsx:propose`; `proposed (no tasks yet)` → the same `/opsx:propose` (it offers to continue the existing change); `N/M tasks` with N < M → `/opsx:apply [change]`; N = M → `/opsx:archive [change]`. If that stage is `unknown`, give its reason instead of a command; if every stage is `done`, say so. Then adjust it:
   - The stage's brief has `_Followed up by:_` and the change has no task done (`not proposed`, `proposed (no tasks yet)`, `0/M tasks`) → it takes the follow-up brief too: not proposed or `proposed (no tasks yet)` → add `@.arch/feature-briefs/[follow-up]` to its `/opsx:propose` (it continues an existing change); `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[follow-up]`, then `/opsx:apply [change]`. `[follow-up]` is each brief down the `_Followed up by:_` chain to the newest (a superseded one → the brief its `_Superseded by:_` names). A change with tasks done finishes on its brief's decisions.
   - The stage's brief has `_Supersedes:_`, the stage is `planned` and the change shows `0/M tasks` → `/opsx:update [change] @.arch/feature-briefs/[brief]` (if not done yet), then `/opsx:apply [change]`; a `proposed (no tasks yet)` change keeps the base `/opsx:propose` command, which continues it.
   - The change is `not proposed` and a sibling in the stage is archived or has tasks done → add "(merged or dropped? /arch:finalize corrects the brief's Changes line)".
@@ -202,6 +208,7 @@ Show only nodes at `ready` maturity. Confirm they meet the criteria for /arch:fi
 ## Rules
 - This skill is read-only — do not modify any files
 - Do not suggest merges or splits — that is /arch:map's job
+- A bare number from the user (08, 008) can mean a stage or a task ID. When both exist, ask which one
 - Do not suggest decisions — that is /arch:decide's job
 - Be direct about what is blocking — do not soften blockers
 - If `FINALIZE_GATE` is open — say so clearly and suggest /arch:finalize, unless nothing is left to brief (then the Step 6 `Next` command)
