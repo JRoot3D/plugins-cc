@@ -128,6 +128,7 @@ Check the node against the readiness criteria in "Maturity progression rules" be
 
 - **All met** → ask: "[node] meets the criteria for `ready`. Mark it ready?" On yes, run `arch.mjs set [slug] maturity ready`, add a History line, and `arch.mjs log decide "[node] ready" --node [slug]` unless Step 5 already logged this run.
 - **Some missing** → list exactly what is missing (e.g. the open question text) and leave the node at `decided`. Resolving them later and re-running `/arch:decide [node]` brings it to `ready`.
+- When the node has a `_Record:` line, run `arch.mjs summary` again and check criterion 6 against its `RECORDS_PENDING`: Current State was generated before this run wrote the line.
 - **Only the record is missing** (criterion 6) → leave the node at `decided` and tell the user: "merge [path], then run `/arch:decide [node]` and choose option 1". `arch.mjs summary` reads the default branch, so run it again to see the record land.
 
 ### Step 7 — Check for Cascades

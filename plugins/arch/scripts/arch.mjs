@@ -1158,8 +1158,13 @@ const records = text => {
 // RECORDS_PENDING: a decision is real once its record is on the default branch — with @ DATE, changed there on or after it.
 const recordsPending = list => {
   if (!git(['rev-parse', '--git-dir']).ok) return 'RECORDS_PENDING unknown — not a git repository'
-  const head = `refs/remotes/${remote()}/HEAD`
-  const ref = git(['rev-parse', '-q', '--verify', head]).ok ? git(['symbolic-ref', '-q', '--short', head]).out || head : 'HEAD'
+  // the remote's default branch; a clone of a repository pushed after git init has no <remote>/HEAD
+  const r = remote()
+  const found = [`refs/remotes/${r}/HEAD`, `refs/remotes/${r}/main`, `refs/remotes/${r}/master`].find(x => git(['rev-parse', '-q', '--verify', x]).ok)
+  let ref = 'HEAD' // a repository with no remote reads its own history
+  if (found?.endsWith('/HEAD')) ref = git(['symbolic-ref', '-q', '--short', found]).out || found
+  else if (found) ref = found.slice('refs/remotes/'.length)
+  else if (git(['remote']).out) return `RECORDS_PENDING unknown — ${r} has no default branch here: run git remote set-head ${r} -a`
   // ponytail: day granularity — a record committed earlier on the @ day hides the pending state; compare with the time
   // of the board commit that added the _Record: line (git -C .arch log -S) if that matters
   const pending = list.flatMap(([slug, recs]) => {

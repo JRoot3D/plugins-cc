@@ -46,7 +46,7 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 Before proceeding, verify:
 
 1. **The gate is open** (`FINALIZE_GATE` in Current State): every blocking node is `ready` and `PROBLEMS` is none.
-   If it is closed — run **Changes line corrections** (check 5) and an **Amend** of a brief the user named (`revise NN`) first — the Amend only after the readiness re-check (check 2) passes for every node the brief covers — then stop and list every reason:
+   If it is closed — run **Changes line corrections** and **Capabilities line corrections** (check 5) and an **Amend** of a brief the user named (`revise NN`) first — the Amend only after the readiness re-check (check 2) passes for every node the brief covers — then stop and list every reason:
    > "Finalize is blocked:
    > - not ready: [blocking nodes] → /arch:explore, then /arch:decide
    > - [each PROBLEMS line] → [the skill that fixes it: /arch:decide for decisions, prerequisites and conflicts; /arch:map for connections]"
@@ -334,7 +334,7 @@ The same criteria `/arch:decide` uses before it marks a node `ready`:
 - Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Outside `.arch/`, write only `context:`, `rules:` and `operations:` in `openspec/config.yaml` (or `config.yml`), after the user confirms
-- Write nothing while the gate is closed (except Changes line corrections, `_Related changes:_` lines and the Amend of a brief the user named, recorded with `arch.mjs log finalize "[what was corrected or amended]: [brief]"`) or a readiness re-check fails
+- Write nothing while the gate is closed (except Changes and Capabilities line corrections, `_Related changes:_` lines and the Amend of a brief the user named, recorded with `arch.mjs log finalize "[what was corrected or amended]: [brief]"`) or a readiness re-check fails
 - Existing briefs and todo-list rows are never rewritten — later runs append; the only edits are those listed in Gate Check 5
 - Write the briefs and the todo list yourself, in this conversation. Do not give them to subagents: they do not get this skill's template and rules
 - Do not invent stage groupings without user confirmation

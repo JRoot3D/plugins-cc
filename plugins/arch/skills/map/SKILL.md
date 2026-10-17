@@ -146,11 +146,11 @@ When the user wants to act on a merge or split suggestion:
 7. `arch.mjs log map "merged [node-a] + [node-b]" --node [merged-slug]`, then `arch.mjs check`
 
 **Rename flow** (a node keeps its scope and decision, only its slug changes):
-1. Claim the old and the new slug (`arch.mjs claim OLD NEW`) on a shared board
-2. `arch.mjs rename-node OLD NEW` — it moves the file, its connections and its revision, and lists the `## Connections` lines and briefs that still name OLD
-3. Rewrite those `## Connections` lines in the other nodes to NEW; leave the briefs as they are (they keep counting through the alias)
-4. Add the History line `- [date] /arch:map — renamed from OLD` to the node, then `arch.mjs log map "renamed OLD to NEW"` without `--node`: no decision changed, so no brief goes outdated
-5. On a shared board, rename a node only when every clone runs arch 4.3 or later: an older clone shows the briefs that name OLD as outdated
+1. On a shared board, rename a node only when every clone runs arch 4.3 or later — ask the user; an older clone shows the briefs that name OLD as outdated. If not every clone does, stop here
+2. Find the other nodes whose `## Connections` name OLD. On a shared board, claim OLD, NEW and each of them: `arch.mjs claim OLD NEW [slug]...`
+3. `arch.mjs rename-node OLD NEW` — it moves the file, its connections and its revision, and lists the `## Connections` lines and briefs that still name OLD
+4. Rewrite those `## Connections` lines in the other nodes to NEW, each with a History line; leave the briefs as they are (they keep counting through the alias)
+5. Add the History line `- [date] /arch:map — renamed from OLD` to the renamed node, then `arch.mjs log map "renamed OLD to NEW"` without `--node`: no decision changed, so no brief goes outdated
 
 **Split flow:**
 1. Show the node and the two identified concerns

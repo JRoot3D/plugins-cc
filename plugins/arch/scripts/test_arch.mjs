@@ -920,6 +920,10 @@ describe('shared board', () => {
     commit('2026-10-05', 'two')
     has(ok(bob, 'summary'), `RECORDS_PENDING (on ${main}) none\n`)
     has(decided('_Record: docs/adr/x.md, docs/adr/0001.md @ 2026-10-05_'), 'a (docs/adr/x.md missing)')
+    // without <remote>/HEAD: the remote's main or master, else unknown
+    sh(bob, 'remote', 'set-head', 'origin', '-d')
+    const fallback = ['main', 'master'].includes(main.split('/')[1]) ? `RECORDS_PENDING (on ${main}) none` : 'RECORDS_PENDING unknown — origin has no default branch here'
+    has(decided('_Record: docs/adr/0001.md_'), fallback)
     lacks(decided(''), 'RECORDS_PENDING')
   })
 
