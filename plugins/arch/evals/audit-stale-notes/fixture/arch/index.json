@@ -1,0 +1,30 @@
+{
+  "project": "Bookshelf",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "store",
+      "name": "Store",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/store.md",
+      "summary": "PostgreSQL, one schema per tenant."
+    },
+    {
+      "slug": "search",
+      "name": "Search",
+      "priority": "core",
+      "maturity": "decided",
+      "file": "ideas/search.md",
+      "summary": "Index fed from the store."
+    }
+  ],
+  "connections": [
+    {
+      "from": "store",
+      "to": "search",
+      "type": "dependency",
+      "note": "search reads the store"
+    }
+  ]
+}

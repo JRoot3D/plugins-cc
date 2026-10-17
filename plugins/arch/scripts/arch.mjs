@@ -51,7 +51,9 @@ survives a git merge that interleaves two clones' sessions, where a position wou
 nodes' revisions (_Arch revision: slug=N, slug=N_); a node whose revision grew since makes it outdated. A full map
 records them too (seen). _Superseded by_ retires a brief; _Followed up by_ does not — finalize bumps the old brief's
 revisions instead, so later changes to its nodes outdate it again, except nodes a brief that follows it up covers:
-those changes outdate only the newest brief in the chain.
+those changes outdate only the newest brief in the chain. _Arch context: slug=N_ lists nodes a brief's text relies on
+without covering them: a later change to one outdates it too (context SLUG ...). So does a stage its ## Dependencies
+- Requires: line names whose brief is superseded (requires OLD (superseded by NEW)), until the line names NEW.
 A shared board lives on a branch of its own (.arch/ is its worktree, hidden from the code branches through
 .git/info/exclude), so its commits never reach a code branch or a pull request. Its locks are refs/arch/locks on the
 remote: one commit holding locks.json {branch, nodes: {KEY: {owner, host, since}}, released: {KEY: commit}}. You are
@@ -63,7 +65,8 @@ project-context.md, ideas/*.md, feature-briefs/*.md; any other file stays out an
 them, and refuses while they change a node file, a brief, todo-list.md or project-context.md whose key you do not hold.
 sync commits nothing: it skips a pull that would overwrite an uncommitted change.
 A brief names its OpenSpec changes on the first \`- Changes:\` line of its ## OpenSpec Handoff; summary derives each
-stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF) from openspec/changes/ without the CLI:
+stage's state (STAGES) and the changes no live brief names (CHANGES_NOT_IN_A_BRIEF: first those whose proposal.md names a
+brief, then the others; _Related changes: a, b_ in a brief takes changes off it) from openspec/changes/ without the CLI:
 in the working tree, and on a shared board on every branch of the remote too (archived anywhere = done; otherwise the
 furthest progress, with the branch it is on).
 
@@ -721,7 +724,16 @@ const changesIn = (where, dirs, readFile) => {
     const m = ARCHIVED_CHANGE.exec(d)
     if (m) archived.set(m[2], m[1])
   }
-  return { where, proposed: dirs(CHANGES).filter(d => d !== 'archive'), archived, tasks: c => countTasks(readFile(`${CHANGES}/${c}/tasks.md`)) }
+  const proposed = dirs(CHANGES).filter(d => d !== 'archive')
+  return {
+    where,
+    proposed,
+    archived,
+    tasks: c => countTasks(readFile(`${CHANGES}/${c}/tasks.md`)),
+    // ponytail: one read per change and place (a git cat-file on a remote tree); batch them if summary gets slow
+    proposal: c =>
+      proposed.includes(c) ? readFile(`${CHANGES}/${c}/proposal.md`) : archived.has(c) ? readFile(`${CHANGES}/archive/${archived.get(c)}-${c}/proposal.md`) : null,
+  }
 }
 
 // On a shared board the code lives on many branches: openspec/changes/ on every branch of the remote counts too,
@@ -816,7 +828,9 @@ const implementation = written => {
     out.push(`  ${name} — ${state}: ${parts.join('; ')}`)
   }
   if (anywhere) {
-    const listed = new Set([...names.values()].flat())
+    // a brief's own changes, and the ones it lists as related (_Related changes: a, b_): they refer to it, not built by it
+    const related = written.flatMap(([, meta]) => (meta['Related changes'] ?? '').split(',').map(s => s.trim()))
+    const listed = new Set([...names.values()].flat().concat(related))
     // archived changes older than the first brief predate arch's handoff
     const since = written
       .map(([, meta]) => (meta.Created ?? '').slice(0, 10))
@@ -824,10 +838,25 @@ const implementation = written => {
       .sort()[0]
     const all = [...new Set(sources.flatMap(s => [...s.proposed, ...s.archived.keys()]))].filter(c => !listed.has(c)).sort()
     const extra = [
-      ...all.filter(c => !archivedOn(c)),
-      ...all.filter(c => since && archivedOn(c) >= since).map(c => `${c} (archived ${archivedOn(c)})`),
+      ...all.filter(c => !archivedOn(c)).map(c => [c, c]),
+      ...all.filter(c => since && archivedOn(c) >= since).map(c => [c, `${c} (archived ${archivedOn(c)})`]),
     ]
-    out.push(`CHANGES_NOT_IN_A_BRIEF ${extra.join(', ') || 'none'}`)
+    if (!extra.length) out.push('CHANGES_NOT_IN_A_BRIEF none')
+    else {
+      // the briefs a change's proposal names: read here, so no skill reads every proposal on each run
+      const files = new Set(written.map(([name]) => name))
+      const named = c => [
+        ...new Set(sources.flatMap(s => [...(s.proposal(c) ?? '').matchAll(/feature-briefs\/(\d{2,}-[a-z0-9-]+\.md)/g)].map(m => m[1]))),
+      ].filter(f => files.has(f))
+      const rows = extra.map(([c, text]) => [text, named(c)])
+      const naming = rows.filter(([, f]) => f.length)
+      const others = rows.filter(([, f]) => !f.length).map(([text]) => text)
+      out.push(
+        `CHANGES_NOT_IN_A_BRIEF ${extra.length} — ${naming.length} name a brief`,
+        ...naming.map(([text, f]) => `  ${text} names ${f.join(', ')}`),
+        ...(others.length ? [`  others: ${others.join(', ')}`] : []),
+      )
+    }
   }
   return out
 }
@@ -967,28 +996,45 @@ const summary = data => {
       const followed = meta['Follows up'] ?? ''
       handedOn.set(followed, new Set([...(handedOn.get(followed) ?? []), ...briefSlugs(meta)]))
     }
+    // slug=N, slug=N -> Map
+    const pairs = text =>
+      new Map(
+        text
+          .split(',')
+          .map(pair => pair.split('=').map(s => s.trim()))
+          .filter(([slug]) => slug)
+          .map(([slug, n]) => [slug, Number(n) || 0]),
+      )
+    // a node archived, or changed by sessions past the revision the brief recorded for it
+    const reason = (slug, at) => {
+      if (!hist.has(slug)) return `${slug} archived`
+      const later = sessions.filter(s => changedBy(s).includes(slug)).slice(at)
+      const skills = [...new Set(later.map(s => s.skill))].sort()
+      return skills.length ? `${slug} ${skills.join('+')}` : null
+    }
+    const superseded = new Map(
+      written.filter(([, meta]) => 'Superseded by' in meta).map(([name, meta]) => [Number(/^\d+/.exec(name)?.[0]), [name, meta['Superseded by']]]),
+    )
     const outdated = []
     for (const [name, meta] of active) {
       // _Arch revision: stack=3, sync=1_ — a node it does not name is at 0. Before 4.0 it was one number, the board
       // revision: every node is at what the sessions up to there made it.
       const text = (meta['Arch revision'] ?? '').trim()
-      const at = /^\d+$/.test(text)
-        ? revs(sessions.slice(0, Number(text)))
-        : new Map(
-            text.split(',').map(pair => {
-              const [slug, n] = pair.split('=').map(s => s.trim())
-              return [slug, Number(n) || 0]
-            }),
-          )
-      const why = briefSlugs(meta)
-        .filter(slug => !handedOn.get(name)?.has(slug))
-        .flatMap(slug => {
-          if (!hist.has(slug)) return [`${slug} archived`]
-          const later = sessions.filter(s => changedBy(s).includes(slug)).slice(at.get(slug) ?? 0)
-          const skills = [...new Set(later.map(s => s.skill))].sort()
-          return skills.length ? [`${slug} ${skills.join('+')}`] : []
-        })
-      if (why.length) outdated.push(`  ${name} — ${why.join(', ')}`)
+      const at = /^\d+$/.test(text) ? revs(sessions.slice(0, Number(text))) : pairs(text)
+      const slugs = briefSlugs(meta)
+      const why = slugs.filter(slug => !handedOn.get(name)?.has(slug)).map(slug => reason(slug, at.get(slug) ?? 0))
+      // _Arch context: slug=N_ — nodes the brief's text relies on without covering them
+      for (const [slug, n] of pairs(meta['Arch context'] ?? '')) {
+        const r = slugs.includes(slug) ? null : reason(slug, n)
+        if (r) why.push(`context ${r}`)
+      }
+      // a stage it requires that another brief replaced (a stage number, not the digits of a task id like T-03)
+      const requires = (sections(read(`${ARCH}/feature-briefs/${name}`)).get('Dependencies') ?? []).find(l => l.startsWith('- Requires:')) ?? ''
+      for (const [nn] of requires.matchAll(/(?<![\w-])\d{2,3}(?![\w-])/g)) {
+        const [old, by] = superseded.get(Number(nn)) ?? []
+        if (old) why.push(`requires ${old} (superseded by ${by.split(/\s/)[0]})`)
+      }
+      if (why.some(Boolean)) outdated.push(`  ${name} — ${why.filter(Boolean).join(', ')}`)
     }
     out.push(`BRIEFS_OUTDATED ${outdated.length || 'none'}`, ...outdated)
   }

@@ -34,7 +34,17 @@ The live nodes are the entries in `index.json` → `nodes`; open node files thro
 **If the node maturity is `raw-idea`** — warn:
 > "This node hasn't been explored yet. Running `/arch:decide` on a raw idea often produces shallow decisions. Recommend `/arch:explore [node]` first. Proceed anyway? (yes/no)"
 
-**If the node maturity is `decided` or `ready`** — show the current `## Decision` and ask what the user wants:
+**If the node maturity is `decided` or `ready`** — show the current `## Decision`, then ask what changed and route with this table, the same one `/arch:status` uses. The priority form (`/arch:decide [node] priority [level]`) skips the table: go to **Priority Change**. Write nothing for a change outside the first row: say which command fits and stop.
+
+| What changed | Run |
+| --- | --- |
+| The chosen approach of a node (its `## Decision`) | `/arch:decide [node]` → revisit |
+| A fact from implementation or a spike, and the decision holds | `/arch:explore [node]` |
+| Scope or order of a stage, and every decision holds | `/arch:finalize revise NN` (the user types it) |
+| A brief in `BRIEFS_OUTDATED` | `/arch:finalize` (the user types it) |
+| Nothing: you want to start or continue a stage | the `Next` command of `/arch:status`, no arch skill — a `ready` node needs no `/arch:decide` |
+
+Only for the first row (or when the user asks to check readiness or to reopen) ask what the user wants:
 > "[node] is already `[maturity]`: [one-line decision]. Do you want to:
 > 1. Check whether it can move to `ready` (decided nodes only)
 > 2. Revisit the decision — the new decision will replace this one
@@ -106,6 +116,7 @@ Update the node file first — `arch.mjs set … decided` refuses a file without
 - Replace or expand `## Description` with the decided approach
 - Add the `## Decision` section from the template below (on a revisit, see Option 2), with Assumptions and Confirmation scaled to the reversal cost
 - If a `conflict` connection involves this node, the decision must resolve it: say how under Implications, remove it with `arch.mjs disconnect FROM TO conflict` and drop its `## Connections` line — `check` reports an open conflict on a decided node
+- On a revisit, look for text the new decision makes stale: search this node's `## Description`, `## Notes`, `## Triage` and `## Connections`, and the `## Connections` lines of connected nodes, for the terms of the previous choice (take them from `## Previous Decision` and the new Alternatives table). Show each hit as file:line and ask the user. For an approved Notes or Triage section, put one banner line under its heading: `> These notes come from before the revisit of [date]. Their [terms] details do not apply. The current decision is in "Decision".` Rewrite an approved Connections line, or a line that says a step is pending when it is done, to the current state. Never edit `## History` or `## Previous Decision`. A line in another node needs that node's claim; without the claim, list the line under Step 7
 - Add session entry to `## History` — include a one-line summary of *what was decided and why*. Not just "decided via /arch:decide" but the substance. Example:
   `- 2026-04-14 /arch:decide — chose PostgreSQL over MongoDB; relational integrity outweighs schema flexibility for this use case`
 
@@ -130,7 +141,7 @@ If a connected node is `decided` or `ready` and this decision contradicts it, sa
 ### Step 8 — Notify
 > "Decision locked → [node name] is now `[decided / ready]`.
 > [N] blocking nodes still not `ready`: [list if any].
-> When none remain, /arch:finalize can run."
+> When none remain, type /arch:finalize to write the briefs."
 
 ---
 
@@ -197,11 +208,12 @@ A node reaches `ready` when:
 
 ## Rules
 - Change maturity and priority only with `arch.mjs set` (it updates the node file and `index.json` together); pair every `arch.mjs connect` / `disconnect` with the matching line in the node files' `## Connections`
-- Add a `## History` line to every node you change: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`
-- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`
+- Add a `## History` line to every node you change, as the last line of `## History`: `- [YYYY-MM-DD] /arch:[skill] — [what changed and why]`. arch.mjs writes no History lines. `set` and `archive` rewrite or move the node file: read it again after them, before you edit it. Never put an Edit of a node file in the same batch as an arch.mjs write to that node. Edit `.arch/` files only with Edit or Write: a shell edit bypasses the lock check
+- Record every run that wrote files with `arch.mjs log` — pass `--node` for each node it changed, other skills use it to tell what changed — then `arch.mjs check`. A run that only marks or rewrites stale lines (the current Decision already says otherwise) adds its History lines and logs without `--node`, so no brief goes outdated
 - Edit existing `.arch/` files in place — never recreate an existing file from scratch
 - Never decide on behalf of the user — always wait for explicit confirmation in Step 4
 - If the user says "just pick the best one" — provide a clear recommendation with rationale, but still ask for confirmation
 - Do not advance to `ready` while any readiness criterion is unmet
 - A node has at most one `## Decision` section — revisiting moves the old one to `## Previous Decision (superseded [date])`
 - If a blocking node is being decided, check all nodes that listed it as a connection and note the unblocking
+- `/arch:finalize` and `/arch:new` start only when the user types them. Tell the user to type the command. Do not offer to run it and do not call it with the Skill tool. Never write feature briefs, todo-list rows or brief header lines outside a finalize run

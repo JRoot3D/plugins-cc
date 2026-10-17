@@ -324,14 +324,54 @@ describe('arch.mjs', () => {
     has(run('summary').out, 'BRIEFS_OUTDATED 2\n  01-x.md — sync decide\n  02-y.md — stack decide\n')
   })
 
+  test('a brief is outdated by the nodes it lists as context', () => {
+    const header = extra => `# Feature Brief: X\n_Arch nodes covered: stack_\n_Arch revision: stack=0_\n${extra}\n## Goal\n`
+    write(root, 'feature-briefs/01-x.md', header('_Arch context: sync=0_'))
+    has(run('summary').out, 'BRIEFS_OUTDATED none')
+    run('log', 'decide', 'x', '--node', 'sync')
+    run('log', 'finalize', 'y', '--node', 'sync') // finalize runs never outdate a brief
+    run('log', 'decide', 'marked stale notes') // a text-only cleanup logs without --node
+    has(run('summary').out, 'BRIEFS_OUTDATED 1\n  01-x.md — context sync decide\n')
+    write(root, 'feature-briefs/01-x.md', header('_Arch context: sync=1_'))
+    has(run('summary').out, 'BRIEFS_OUTDATED none')
+    // a slug in both lists is a covered slug; without the header a context node never outdates the brief
+    write(root, 'feature-briefs/01-x.md', header('_Arch context: stack=0, sync=1_'))
+    run('log', 'decide', 'z', '--node', 'stack')
+    has(run('summary').out, 'BRIEFS_OUTDATED 1\n  01-x.md — stack decide\n')
+    write(root, 'feature-briefs/01-x.md', header('').replace('stack=0', 'stack=1'))
+    has(run('summary').out, 'BRIEFS_OUTDATED none')
+    write(root, 'feature-briefs/01-x.md', header('_Arch context: sync=1_').replace('stack=0', 'stack=1'))
+    assert.equal(run('archive', 'sync').code, 0)
+    has(run('summary').out, 'BRIEFS_OUTDATED 1\n  01-x.md — context sync archived\n')
+  })
+
+  test('a brief that requires a superseded stage is outdated', () => {
+    const b = (header, requires) => `# Feature Brief: X\n_Arch nodes covered: stack_\n_Arch revision: stack=0_\n${header}\n## Dependencies\n- Requires: ${requires}\n`
+    write(root, 'feature-briefs/01-a.md', b('_Superseded by: 03-c.md (2026-10-07)_', '—'))
+    write(root, 'feature-briefs/03-c.md', b('_Supersedes: 01-a.md_', '—'))
+    write(root, 'feature-briefs/04-d.md', b('_Followed up by: 05-e.md (2026-10-07)_', '—'))
+    write(root, 'feature-briefs/05-e.md', b('_Follows up: 04-d.md_', '04'))
+    for (const [requires, line] of [
+      ['01', '  02-b.md — requires 01-a.md (superseded by 03-c.md)\n'],
+      ['01, 04 (after T-03)', '  02-b.md — requires 01-a.md (superseded by 03-c.md)\n'],
+      ['03', null],
+      ['—', null],
+    ]) {
+      write(root, 'feature-briefs/02-b.md', b('', requires))
+      const { out } = run('summary')
+      if (line) has(out, `BRIEFS_OUTDATED 1\n${line}`)
+      else has(out, 'BRIEFS_OUTDATED none')
+    }
+  })
+
   test('stages from openspec changes', () => {
-    for (const [name, changes] of [
+    for (const [name, changes, header = ''] of [
       ['01-a.md', 'init'],
       ['02-b.md', '`add-auth` (backend) → auth-ui; auth-api'],
       ['04-d.md', 'canvas -> canvas-ui'],
-      ['05-e.md', 'setup'],
+      ['05-e.md', 'setup', '_Related changes: spike_\n'], // spike refers to 05 without being one of its changes
     ])
-      write(root, `feature-briefs/${name}`, brief(changes))
+      write(root, `feature-briefs/${name}`, brief(changes, header))
     // only the first Changes line inside the handoff counts; an item without a leading change name is skipped
     write(root, 'feature-briefs/03-c.md', `${brief('(tbd), export').replace('## Goal\nx', '## Goal\n- Changes: goal')}- Changes: later\n`)
     write(root, 'feature-briefs/06-f.md', brief(null, '', null))
@@ -358,6 +398,7 @@ describe('arch.mjs', () => {
       '- [ x] a\n- [~] b\n1. [ ] c\n- [A](https://x)\n* [X] d\n  - [x] nested\n+ [ ] plus\n2) [ ] paren\n- [ ](x) box\n- [x][ref] link\n',
     ) // OpenSpec 1.14.1 counts 3/8
     change(root, 'canvas', '## 1\n- [ ] a\n- []b\n')
+    fs.writeFileSync(path.join(root, 'openspec/changes/fix-typo/proposal.md'), 'Brief: .arch/feature-briefs/02-b.md and feature-briefs/09-gone.md\n')
     change(root, 'auth-api', Buffer.from('\xef\xbb\xbf- [x] caf\xe9\n- [ ] b\n', 'latin1')) // BOM and a Latin-1 byte
     const { code, out } = run('summary')
     assert.equal(code, 0, out)
@@ -371,9 +412,10 @@ describe('arch.mjs', () => {
         '  05-e.md — not started: setup not proposed\n' + // 2026-10-01-add-setup is another change
         '  06-f.md — unknown: its OpenSpec Handoff names no changes\n' +
         // only the superseded brief names old-thing; the earliest brief (superseded, 2026-09-15) sets the
-        // cutoff, so spike counts and legacy predates arch's handoff
-        'CHANGES_NOT_IN_A_BRIEF fix-typo, old-thing, add-setup (archived 2026-10-01), hotfix (archived 2026-10-02), ' +
-        'spike (archived 2026-09-25)\n',
+        // cutoff, so legacy predates arch's handoff; fix-typo's proposal names 02-b (09-gone is no brief)
+        'CHANGES_NOT_IN_A_BRIEF 4 — 1 name a brief\n' +
+        '  fix-typo names 02-b.md\n' +
+        '  others: old-thing, add-setup (archived 2026-10-01), hotfix (archived 2026-10-02)\n',
     )
   })
 
@@ -595,7 +637,13 @@ describe('shared board', () => {
     assert.ok(!fs.existsSync(path.join(alice, 'openspec')), 'alice has not pulled the code')
     const out = ok(alice, 'summary')
     has(out, 'STAGES 1\n  01-x.md — in progress: add-auth 1/2 tasks on origin/feat/auth; setup archived 2026-10-05\n')
-    has(out, 'CHANGES_NOT_IN_A_BRIEF old (archived 2026-10-02)\n')
+    has(out, 'CHANGES_NOT_IN_A_BRIEF 1 — 0 name a brief\n  others: old (archived 2026-10-02)\n')
+    // a proposal that exists only on a remote branch is read there
+    sh(bob, 'switch', '-q', 'feat/auth')
+    put('openspec/changes/archive/2026-10-06-tidy/proposal.md', 'From .arch/feature-briefs/01-x.md')
+    sh(bob, 'push', '-q')
+    ok(alice, 'sync')
+    has(ok(alice, 'summary'), 'CHANGES_NOT_IN_A_BRIEF 2 — 1 name a brief\n  tidy (archived 2026-10-06) names 01-x.md\n  others: old (archived 2026-10-02)\n')
   })
 
   test('of two claims racing for one node, one wins', async () => {
@@ -864,6 +912,14 @@ test('shared skill lines are present and identical', () => {
     '3. `## Decision → Implications`': ['decide', 'finalize'],
     '4. Every node it depends on': ['decide', 'finalize'],
     '5. A high reversal-cost decision': ['decide', 'finalize'],
+    // the routing table: which skill a change needs
+    '| What changed | Run |': ['decide', 'status'],
+    '| The chosen approach of a node': ['decide', 'status'],
+    '| A fact from implementation': ['decide', 'status'],
+    '| Scope or order of a stage': ['decide', 'status'],
+    '| A brief in `BRIEFS_OUTDATED`': ['decide', 'status'],
+    '| Nothing: you want to start': ['decide', 'status'],
+    '- `/arch:finalize` and `/arch:new` start only': ['decide', 'status', 'audit'],
   }
   const dir = path.join(path.dirname(SCRIPT), '..', 'skills')
   const skills = fs.readdirSync(dir).filter(name => fs.existsSync(path.join(dir, name, 'SKILL.md')))

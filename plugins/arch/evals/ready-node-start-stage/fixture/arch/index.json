@@ -1,0 +1,31 @@
+{
+  "project": "Clinic",
+  "created": "2026-10-17",
+  "nodes": [
+    {
+      "slug": "tooling",
+      "name": "Tooling",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/tooling.md",
+      "summary": "pnpm workspace, one CI workflow."
+    },
+    {
+      "slug": "db",
+      "name": "Database",
+      "priority": "blocking",
+      "maturity": "ready",
+      "file": "ideas/db.md",
+      "summary": "PostgreSQL with versioned SQL migrations."
+    },
+    {
+      "slug": "api",
+      "name": "API",
+      "priority": "core",
+      "maturity": "ready",
+      "file": "ideas/api.md",
+      "summary": "REST API with OpenAPI."
+    }
+  ],
+  "connections": []
+}

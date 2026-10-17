@@ -107,6 +107,7 @@ For all nodes at `decided` or `ready` maturity, read their `## Decision` section
 - **Direct contradictions** — Two decisions that cannot both be true (e.g., "serverless" + "long-running background workers")
 - **Implicit tensions** — Decisions that work against each other without being strictly incompatible (e.g., "minimize dependencies" + choosing a framework that pulls in 200 packages)
 - **Assumption mismatches** — One node assumes something about another that isn't in that node's decision (e.g., auth node assumes REST API, but API node decided on GraphQL)
+- **Stale text** — a line in a decided or ready node's `## Description`, `## Notes`, `## Triage` or `## Connections` that states as current an option its Alternatives table or its `## Previous Decision` rejected, or that says a step is pending ("PR pending", "X renames it") when the step is done → 🟡 with file:line → `/arch:decide [node]` (revisit cleanup) or `/arch:explore [node]`. A section whose first line is a `> These notes come from before …` banner is already handled: do not report its lines.
 
 **Output format:**
 ```
@@ -119,6 +120,10 @@ For all nodes at `decided` or `ready` maturity, read their `## Decision` section
   🟡 Tension:
     • "tech-stack" decided "minimize dependencies" — but "ui-framework" chose Next.js
       which brings a large dependency tree. Not a blocker, but worth acknowledging.
+
+  🟡 Stale text:
+    • ideas/search.md:31 (Connections) — "Mongo change streams feed the index", but "store"
+      moved to PostgreSQL → /arch:decide store (revisit cleanup)
 
   🟢 No contradictions found between: auth, data-model, api-design
 ```
@@ -245,7 +250,7 @@ Only when `STAGES` lists a stage `planned`, `in progress` or `done`, or `CHANGES
 - **Changes from a brief** — every proposed or archived change of those stages (`N/M tasks`, `proposed (no tasks yet)` or `archived [date]` in its `STAGES` line). Compare its `design.md` → Decisions and Non-Goals with its own brief's `## Key Decisions Already Made` and `## Out of Scope` — the snapshot arch handed over, not the nodes' current decisions (changes since the brief are `BRIEFS_OUTDATED`, reported in Step 3). A design that matches a follow-up brief (down its brief's `_Followed up by:_` chain) that its proposal names is not drift. A change with no task done whose brief is followed up but whose proposal does not name the follow-up brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[follow-up brief]`; one with tasks done finishes on its own brief's decisions. A change with no task done of a stage whose brief has `_Supersedes:_`, whose proposal names only the superseded brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[brief]`.
   - A contradiction is 🔴. Remedy by the change's own `STAGES` entry: `proposed (no tasks yet)` or `0/M tasks` → revise it with `/opsx:update [change] @.arch/feature-briefs/[brief]`; tasks done or `archived` → `/arch:decide [node]` (the covered node the Key Decision came from) to record what was built, then `/arch:finalize` follows the brief up.
   - No `design.md` → compare with `proposal.md` instead. An active change also gets 🟡 "Key Decisions not carried into design.md" → `/opsx:continue [change]` (expanded profile — `openspec config profile`) or have the agent follow `openspec instructions design --change [change]`, then `/opsx:update [change] @.arch/feature-briefs/[brief]` if tasks.md must follow. An archived one does not.
-- **Changes not from a brief** (`CHANGES_NOT_IN_A_BRIEF`) — read the change's `proposal.md`. If it names a brief, the change was renamed during propose → 🟡, `/arch:finalize` corrects that brief's `- Changes:` line; if that brief is marked `_Superseded by:_`, the change was proposed from a retired brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[the brief its _Superseded by:_ names]` (no task done) and `/arch:finalize` puts the name on that brief's Changes line. If it touches a node's area → 🟡 "decided outside arch" → `/arch:decide [node]`. Otherwise it is unrelated — leave it out.
+- **Changes not from a brief** (`CHANGES_NOT_IN_A_BRIEF`) — `summary` already read their proposals. A `[change] names [brief]` line: the change was renamed during propose → 🟡, `/arch:finalize` corrects that brief's `- Changes:` line; if that brief is marked `_Superseded by:_`, the change was proposed from a retired brief → 🟡 → `/opsx:update [change] @.arch/feature-briefs/[the brief its _Superseded by:_ names]` (no task done) and `/arch:finalize` puts the name on that brief's Changes line. If the change only refers to the brief, `/arch:finalize` lists it under the brief's `_Related changes:_`. The changes on the `others:` line name no brief: read their `proposal.md` only in a full review or `/arch:audit openspec`, for this check — one that touches a node's area → 🟡 "decided outside arch" → `/arch:decide [node]`. Otherwise it is unrelated — leave it out.
 
 **Output format:**
 ```
@@ -333,3 +338,4 @@ Run only Step 9 (OpenSpec Drift). If its condition is false, say why in one line
 - Use `project-context.md` to judge relevance — don't flag missing i18n for a CLI tool, don't flag missing accessibility for a backend API
 - When a check has no findings, say so in one line and move on — don't pad the report
 - If the architecture is in good shape, say so. A clean review is a valid outcome.
+- `/arch:finalize` and `/arch:new` start only when the user types them. Tell the user to type the command. Do not offer to run it and do not call it with the Skill tool. Never write feature briefs, todo-list rows or brief header lines outside a finalize run
