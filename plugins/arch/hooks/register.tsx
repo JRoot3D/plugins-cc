@@ -43,6 +43,11 @@ const locked = async ($: EngineInterface, file: string) => {
   return exitCode === 0 ? undefined : `${$.plugin.name}: ${(stderr || stdout).replace(/^ERROR: /, '').trim()}`
 }
 
+// The refusal when the lock check itself failed
+const unchecked = ($: EngineInterface, file: unknown) => ({
+  deny: `${$.plugin.name}: could not check the lock on ${String(file)} — run /arch:status, then try again`,
+})
+
 // Runs an arch.mjs command the person typed, then refreshes the locks it may have changed.
 const typed = async ($: EngineInterface, args: string[]) => {
   const { exitCode, stdout, stderr } = await arch($, args)
@@ -73,10 +78,15 @@ export const register: Register = on => {
     await $.command.register({ name: 'arch-share', description: 'Give the arch board its own git branch and per-node locks, or set this clone up for a shared board: /arch-share [branch]' })
     await $.command.register({ name: 'arch-release', description: 'Commit and push .arch/, then free the arch nodes you hold' })
     await $.command.register({ name: 'arch-unlock', description: "Free an abandoned arch lock, yours or another person's: /arch-unlock <node>" })
-    if (await $.fs.exists(INDEX)) {
-      void open($)
-      void sync($).catch(() => undefined)
-    }
+    // with no .arch/ at all, sync joins a board the remote holds (a fresh clone) and otherwise makes no network call
+    const board = await $.fs.exists(INDEX)
+    if (board) void open($)
+    if (board || !(await $.fs.exists('.arch')))
+      void sync($)
+        .then(async () => {
+          if (!board && (await $.fs.exists(INDEX))) void open($)
+        })
+        .catch(() => undefined)
 
     return next(e)
   })
@@ -112,14 +122,15 @@ export const register: Register = on => {
   })
 
   // On a shared board a node's file is edited only under your lock; arch.mjs set/add-node/archive check it themselves.
+  // A check that fails refuses a file under .arch/: a failed guard would otherwise let the edit run.
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const deny = await locked($, e.file_path)
     return deny === undefined ? next(e) : { deny }
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => (next.called || !ARCH_FILE.test(String(e.file_path)) ? next(e) : unchecked($, e.file_path)))
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const deny = await locked($, e.file_path)
     return deny === undefined ? next(e) : { deny }
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => (next.called || !ARCH_FILE.test(String(e.file_path)) ? next(e) : unchecked($, e.file_path)))
 
   // Every write to index.json goes through arch.mjs, from Bash or PowerShell.
   on('tool.call', async ($, e, next) => {
